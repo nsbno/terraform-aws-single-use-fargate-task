@@ -5,3 +5,6 @@ crash.log
 
 # InteliJ IDE
 .idea/
+
+# Zipped src
+src/*.zip

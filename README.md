@@ -1,6 +1,15 @@
-## Terraform AWS Template
+## Single Use Fargate Task
 
-This template is a starting point for creating terraform modules.
+This module provides a way of simply running ad-hoc containers in Fargate.
 
-Terraform modules should be in a state that they can be published to the Terraform Module Registry. Guidelines can be 
-found here https://www.terraform.io/docs/registry/modules/publish.html
+The module creates a Lambda that can be called to run a command of your choosing in a container of your choice with a
+volume of content from s3 mounted.
+
+```$xslt
+{
+  "image": "colincoleman/circleci-ecr:latest",
+  "content": "s3://111222333444-pipeline-artifact/step-pipeline/12345.zip",
+  "file_to_run": "entrypoint.sh"
+  "ecs_cluster": "test-single-tasks"
+}
+```
