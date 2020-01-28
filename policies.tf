@@ -33,17 +33,20 @@ data "aws_iam_policy_document" "ecs_for_lambda" {
     actions = [
       "ecs:DeregisterTaskDefinition",
       "ecs:RegisterTaskDefinition",
-      "iam:PassRole"
     ]
-    resources = ["*"]
+    resources = [
+      "*"]
   }
   statement {
     effect = "Allow"
-    actions =["ecs:RunTask"]
-    resources = ["*"]
+    actions = [
+      "ecs:RunTask"]
+    resources = [
+      "*"]
     condition {
       test = "ArnEquals"
-      values = [aws_ecs_cluster.ecs_cluster.arn]
+      values = [
+        aws_ecs_cluster.ecs_cluster.arn]
       variable = "ecs:cluster"
     }
   }
