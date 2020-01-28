@@ -45,3 +45,13 @@ resource "aws_ecs_cluster" "ecs_cluster" {
   name = "${var.name_prefix}-single-tasks"
   tags = var.tags
 }
+
+resource "aws_iam_role" "task_execution_role" {
+  name = "${var.name_prefix}-ECSTaskExecutionRole"
+  assume_role_policy = data.aws_iam_policy_document.ecs_assume
+}
+
+resource "aws_iam_role_policy_attachment" "ECSTaskExecution" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonECSTaskExecutionRolePolicy"
+  role = aws_iam_role.task_execution_role.id
+}
