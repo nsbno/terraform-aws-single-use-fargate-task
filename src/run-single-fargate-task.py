@@ -11,7 +11,7 @@ def lambda_handler(event, context):
     logger.info ("event: "+ json.dumps(event))
     task_definition = create_task_definition('testjob', event['image'],event['file_to_run'],event['task_role_arn'])
     logger.info(task_definition)
-    run_task(task_definition,event['content'],event['activity_arn'],event['subnets'])
+    run_task(task_definition,event['content'],event['activity_arn'],event['subnets'],event['ecs_cluster'])
     clean_up(task_definition)
 
 
@@ -103,7 +103,7 @@ def create_task_definition(task_name, image_url,file_to_run,task_role_arn):
     return response['taskDefinition']['family'] + ":" + str(response['taskDefinition']['revision'])
 
 
-def run_task(task_definition, content, activity_arn, subnets):
+def run_task(task_definition, content, activity_arn, subnets,ecs_cluster):
     logger.info("subnets: " + str(subnets))
     client = boto3.client('ecs')
     command_str = (
@@ -121,7 +121,7 @@ def run_task(task_definition, content, activity_arn, subnets):
     )
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
-        cluster='test-single-tasks',
+        cluster=ecs_cluster,
         launchType='FARGATE',
         taskDefinition=task_definition,
         count=1,
