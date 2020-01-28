@@ -85,6 +85,6 @@ data "aws_iam_policy_document" "AmazonECSTaskExecutionRolePolicy" {
   statement {
     effect    = "Allow"
     actions   = ["logs:CreateLogGroup"]
-    resources = ["arn:aws:logs:${local.current_region}:${local.current_account_id}:single-use-tasks"]
+    resources = ["arn:aws:logs:${local.current_region}:${local.current_account_id}:/aws/ecs/single-use-tasks"]
   }
 }
