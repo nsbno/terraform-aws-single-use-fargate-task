@@ -9,7 +9,7 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event, context):
     logger.info ("event: "+ json.dumps(event))
-    task_definition = create_task_definition('testjob', event['image'],event['file_to_run'],event['task_role_arn'],event['task_execution_role_arn'])
+    task_definition = create_task_definition('single-use-tasks', event['image'],event['file_to_run'],event['task_role_arn'],event['task_execution_role_arn'])
     logger.info(task_definition)
     run_task(task_definition,event['content'],event['activity_arn'],event['subnets'],event['ecs_cluster'])
     clean_up(task_definition)
