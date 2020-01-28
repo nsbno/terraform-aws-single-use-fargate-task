@@ -5,3 +5,7 @@ output "function_name" {
 output "lambda_exec_role_id" {
   value = aws_iam_role.lambda_exec.id
 }
+
+output "task_execution_role_arn" {
+  value = aws_iam_role.task_execution_role.arn
+}
