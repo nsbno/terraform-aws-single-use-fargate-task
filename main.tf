@@ -51,7 +51,7 @@ resource "aws_iam_role" "task_execution_role" {
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
 }
 
-resource "aws_iam_role_policy_attachment" "ECSTaskExecution" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonECSTaskExecutionRolePolicy"
+resource "aws_iam_role_policy" "ECSTaskExecution" {
+  policy = data.aws_iam_policy_document.AmazonECSTaskExecutionRolePolicy.json
   role = aws_iam_role.task_execution_role.id
 }
