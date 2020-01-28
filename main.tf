@@ -48,7 +48,7 @@ resource "aws_ecs_cluster" "ecs_cluster" {
 
 resource "aws_iam_role" "task_execution_role" {
   name = "${var.name_prefix}-ECSTaskExecutionRole"
-  assume_role_policy = data.aws_iam_policy_document.ecs_assume
+  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
 }
 
 resource "aws_iam_role_policy_attachment" "ECSTaskExecution" {
