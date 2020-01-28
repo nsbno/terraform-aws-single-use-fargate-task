@@ -40,6 +40,13 @@ data "aws_iam_policy_document" "ecs_for_lambda" {
   statement {
     effect = "Allow"
     actions = [
+      "iam:PassRole"
+    ]
+    resources = [aws_iam_role.task_execution_role.arn]
+  }
+  statement {
+    effect = "Allow"
+    actions = [
       "ecs:RunTask"]
     resources = [
       "*"]
@@ -52,3 +59,13 @@ data "aws_iam_policy_document" "ecs_for_lambda" {
   }
 }
 
+data "aws_iam_policy_document" "ecs_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      identifiers = ["ecs.amazonaws.com"]
+      type        = "Service"
+    }
+  }
+}
