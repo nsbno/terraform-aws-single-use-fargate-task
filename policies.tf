@@ -41,11 +41,6 @@ data "aws_iam_policy_document" "ecs_for_lambda" {
     effect = "Allow"
     actions =["ecs:RunTask"]
     resources = ["*"]
-    condition {
-      test = "ArnEquals"
-      values = [aws_ecs_cluster.ecs_cluster.arn]
-      variable = "ecs:cluster"
-    }
   }
 }
 
