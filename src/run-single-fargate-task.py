@@ -131,7 +131,7 @@ def run_task(task_definition, content, activity_arn, subnets,ecs_cluster):
         overrides={
             'containerOverrides': [
                 {
-                    'name': 'stepfunction-activity-sidecar',
+                    'name': 'single-use-tasks-activity-sidecar',
                     'command': [ command_str ]
                 }
             ]
