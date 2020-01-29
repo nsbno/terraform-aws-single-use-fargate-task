@@ -77,7 +77,7 @@ def create_task_definition(task_name, image_url,file_to_run,task_role_arn, task_
                 ]
             },
             {
-                'name': 'stepfunction-activity-sidecar',
+                'name': task-name + '-activity-sidecar',
                 'image': 'vydev/awscli:latest',
                 'entryPoint': [
                     '/bin/sh',

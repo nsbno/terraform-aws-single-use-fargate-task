@@ -68,6 +68,6 @@ data "aws_iam_policy_document" "create_log_groups_for_ecs" {
   statement {
     effect    = "Allow"
     actions   = ["logs:CreateLogGroup"]
-    resources = ["arn:aws:logs:${local.current_region}:${local.current_account_id}:/aws/ecs/single-use-tasks"]
+    resources = ["*"]
   }
 }
