@@ -63,6 +63,7 @@ def create_task_definition(task_name, image_url,file_to_run,task_role_arn, task_
                 'logConfiguration': {
                     'logDriver': 'awslogs',
                     'options': {
+                        'awslogs-create-group': True,
                         'awslogs-group': '/aws/ecs/' + task_name,
                         'awslogs-region': 'eu-west-1',
                         'awslogs-stream-prefix': task_family+'-main'
@@ -92,6 +93,7 @@ def create_task_definition(task_name, image_url,file_to_run,task_role_arn, task_
                 'logConfiguration': {
                     'logDriver': 'awslogs',
                     'options': {
+                        'awslogs-create-group': True,
                         'awslogs-group': '/aws/ecs/' + task_name,
                         'awslogs-region': 'eu-west-1',
                         'awslogs-stream-prefix': task_family+'-sidecar'

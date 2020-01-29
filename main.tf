@@ -47,15 +47,16 @@ resource "aws_ecs_cluster" "ecs_cluster" {
 }
 
 resource "aws_iam_role" "task_execution_role" {
-  name = "${var.name_prefix}-ECSTaskExecutionRole"
+  name               = "${var.name_prefix}-ECSTaskExecutionRole"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
 }
 
-resource "aws_iam_role_policy" "ECSTaskExecution" {
-  policy = data.aws_iam_policy_document.AmazonECSTaskExecutionRolePolicy.json
-  role = aws_iam_role.task_execution_role.id
+resource "aws_iam_role_policy_attachment" "ECSTaskExecution" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  role       = aws_iam_role.task_execution_role.id
 }
 
-resource "aws_cloudwatch_log_group" "main" {
-  name = "/aws/ecs/single-use-tasks"
+resource "aws_iam_role_policy" "create_log_group_to_ecs" {
+  policy = data.aws_iam_policy_document.create_log_groups_for_ecs.json
+  role   = aws_iam_role.task_execution_role.id
 }

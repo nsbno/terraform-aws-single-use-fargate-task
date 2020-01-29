@@ -4,19 +4,19 @@ terraform {
 
 provider "aws" {
   version = ">= 2.44"
-  region = "eu-west-1"
+  region  = "eu-west-1"
 }
 
-locals{
+locals {
   name_prefix = "test"
   tags = {
-    terraform = "true"
+    terraform   = "true"
     environment = "test"
   }
 }
 
 module "single_use_fargate_task" {
-  source = "../../"
+  source      = "../../"
   name_prefix = local.name_prefix
-  tags = local.tags
+  tags        = local.tags
 }

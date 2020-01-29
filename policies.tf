@@ -34,26 +34,21 @@ data "aws_iam_policy_document" "ecs_for_lambda" {
       "ecs:DeregisterTaskDefinition",
       "ecs:RegisterTaskDefinition",
     ]
-    resources = [
-      "*"]
+    resources = ["*"]
   }
   statement {
-    effect = "Allow"
-    actions = [
-      "iam:PassRole"
-    ]
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
     resources = [aws_iam_role.task_execution_role.arn]
   }
   statement {
-    effect = "Allow"
-    actions = [
-      "ecs:RunTask"]
-    resources = [
-      "*"]
+    effect    = "Allow"
+    actions   = ["ecs:RunTask"]
+    resources = ["*"]
     condition {
       test = "ArnEquals"
       values = [
-        aws_ecs_cluster.ecs_cluster.arn]
+      aws_ecs_cluster.ecs_cluster.arn]
       variable = "ecs:cluster"
     }
   }
@@ -69,19 +64,7 @@ data "aws_iam_policy_document" "ecs_assume" {
     }
   }
 }
-data "aws_iam_policy_document" "AmazonECSTaskExecutionRolePolicy" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "ecr:GetAuthorizationToken",
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents"
-    ]
-    resources = ["*"]
-  }
+data "aws_iam_policy_document" "create_log_groups_for_ecs" {
   statement {
     effect    = "Allow"
     actions   = ["logs:CreateLogGroup"]
