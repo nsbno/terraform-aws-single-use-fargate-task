@@ -55,3 +55,7 @@ resource "aws_iam_role_policy" "ECSTaskExecution" {
   policy = data.aws_iam_policy_document.AmazonECSTaskExecutionRolePolicy.json
   role = aws_iam_role.task_execution_role.id
 }
+
+resource "aws_cloudwatch_log_group" "main" {
+  name = "/aws/ecs/single-use-tasks"
+}
