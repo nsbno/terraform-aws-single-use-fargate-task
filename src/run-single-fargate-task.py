@@ -9,13 +9,13 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event, context):
     logger.info ("event: "+ json.dumps(event))
-    task_definition = create_task_definition('single-use-tasks', event['image'],event['file_to_run'],event['task_role_arn'],event['task_execution_role_arn'])
+    task_definition = create_task_definition('single-use-tasks', event['image'],event['cmd_to_run'],event['task_role_arn'],event['task_execution_role_arn'])
     logger.info(task_definition)
     run_task(task_definition,event['content'],event['activity_arn'],event['subnets'],event['ecs_cluster'])
     clean_up(task_definition)
 
 
-def create_task_definition(task_name, image_url,file_to_run,task_role_arn, task_execution_role_arn):
+def create_task_definition(task_name, image_url,cmd_to_run,task_role_arn, task_execution_role_arn):
     current_account_id = boto3.client('sts').get_caller_identity().get('Account')
     date_time_obj = datetime.now()
     client = boto3.client('ecs')
@@ -30,7 +30,7 @@ def create_task_definition(task_name, image_url,file_to_run,task_role_arn, task_
         "rm /tmp/workspace/init_complete && "
         "UNZIPPED_FOLDER=`ls -d /tmp/workspace/*/` && "
         "cd /tmp/workspace/ && "
-        "" + file_to_run + " && "
+        "" + cmd_to_run + " && "
         "touch /tmp/workspace/main-complete"
     )
     logger.info("main command str: " + command_str)
