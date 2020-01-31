@@ -108,19 +108,32 @@ def create_task_definition(task_name, image_url,cmd_to_run,task_role_arn, task_e
 def run_task(task_definition, content, activity_arn, subnets,ecs_cluster):
     logger.info("subnets: " + str(subnets))
     client = boto3.client('ecs')
-    command_str = (
-        "function await_main_complete() { "
-          "while [ ! -f /tmp/workspace/main-complete ]; do "
+    if content=="":
+        command_str = (
+            "function await_main_complete() { "
+            "while [ ! -f /tmp/workspace/main-complete ]; do "
             "sleep 1; "
-          "done } && "
-        "aws s3 cp "+content+" /tmp/workspace/ && "
-        "unzip /tmp/workspace/"+re.findall(r"[^/]*\.zip",content)[0]+" -d /tmp/workspace/ && "
-        "touch /tmp/workspace/init_complete && "
-        "TASK_TOKEN=`aws stepfunctions get-activity-task --activity-arn "+activity_arn+" --region eu-west-1 | jq -r .'taskToken'` && "
-        "await_main_complete  && "
-        "echo 'main complete' && "
-        "aws stepfunctions send-task-success --task-token $TASK_TOKEN --task-output '{\"output\": \"0\"}' --region eu-west-1"
-    )
+            "done } && "
+            "touch /tmp/workspace/init_complete && "
+            "TASK_TOKEN=`aws stepfunctions get-activity-task --activity-arn "+activity_arn+" --region eu-west-1 | jq -r .'taskToken'` && "
+            "await_main_complete  && "
+            "echo 'main complete' && "
+            "aws stepfunctions send-task-success --task-token $TASK_TOKEN --task-output '{\"output\": \"0\"}' --region eu-west-1"
+        )
+    else :
+        command_str = (
+            "function await_main_complete() { "
+              "while [ ! -f /tmp/workspace/main-complete ]; do "
+                "sleep 1; "
+              "done } && "
+            "aws s3 cp "+content+" /tmp/workspace/ && "
+            "unzip /tmp/workspace/"+re.findall(r"[^/]*\.zip",content)[0]+" -d /tmp/workspace/ && "
+            "touch /tmp/workspace/init_complete && "
+            "TASK_TOKEN=`aws stepfunctions get-activity-task --activity-arn "+activity_arn+" --region eu-west-1 | jq -r .'taskToken'` && "
+            "await_main_complete  && "
+            "echo 'main complete' && "
+            "aws stepfunctions send-task-success --task-token $TASK_TOKEN --task-output '{\"output\": \"0\"}' --region eu-west-1"
+        )
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
