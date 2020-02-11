@@ -16,22 +16,23 @@ def lambda_handler(event, context):
 
 
 def create_task_definition(task_name, image_url,cmd_to_run,task_role_arn, task_execution_role_arn):
-    current_account_id = boto3.client('sts').get_caller_identity().get('Account')
     date_time_obj = datetime.now()
     client = boto3.client('ecs')
     task_family = 'one-off-task-' + date_time_obj.strftime("%Y%m%d%H%M")
+    shellscript = (
+            "function sidecar_init() { \n"
+            "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
+            "        sleep 1; \n"
+            "    done \n"
+            "}\n"
+            "sidecar_init \n"
+            "rm /tmp/workspace/init_complete \n"
+            "cd /tmp/workspace/ \n"
+            "" + cmd_to_run + " \n"
+            "echo $? > /tmp/workspace/main-complete"
+    )
     command_str = (
-        "function sidecar_init() { "
-            "while [ ! -f /tmp/workspace/init_complete ]; do "
-              "sleep 1; "
-            "done "
-        "} && "
-        "sidecar_init && "
-        "rm /tmp/workspace/init_complete && "
-        "UNZIPPED_FOLDER=`ls -d /tmp/workspace/*/` && "
-        "cd /tmp/workspace/ && "
-        "" + cmd_to_run + " && "
-        "touch /tmp/workspace/main-complete"
+        "echo '" + shellscript +"' > script.sh && chmod +x script.sh && ./script.sh"
     )
     logger.info("main command str: " + command_str)
     response = client.register_task_definition(
@@ -108,32 +109,7 @@ def create_task_definition(task_name, image_url,cmd_to_run,task_role_arn, task_e
 def run_task(task_definition, content, activity_arn, subnets,ecs_cluster):
     logger.info("subnets: " + str(subnets))
     client = boto3.client('ecs')
-    if content=="":
-        command_str = (
-            "function await_main_complete() { "
-            "while [ ! -f /tmp/workspace/main-complete ]; do "
-            "sleep 1; "
-            "done } && "
-            "touch /tmp/workspace/init_complete && "
-            "TASK_TOKEN=`aws stepfunctions get-activity-task --activity-arn "+activity_arn+" --region eu-west-1 | jq -r .'taskToken'` && "
-            "await_main_complete  && "
-            "echo 'main complete' && "
-            "aws stepfunctions send-task-success --task-token $TASK_TOKEN --task-output '{\"output\": \"0\"}' --region eu-west-1"
-        )
-    else :
-        command_str = (
-            "function await_main_complete() { "
-              "while [ ! -f /tmp/workspace/main-complete ]; do "
-                "sleep 1; "
-              "done } && "
-            "aws s3 cp "+content+" /tmp/workspace/ && "
-            "unzip /tmp/workspace/"+re.findall(r"[^/]*\.zip",content)[0]+" -d /tmp/workspace/ && "
-            "touch /tmp/workspace/init_complete && "
-            "TASK_TOKEN=`aws stepfunctions get-activity-task --activity-arn "+activity_arn+" --region eu-west-1 | jq -r .'taskToken'` && "
-            "await_main_complete  && "
-            "echo 'main complete' && "
-            "aws stepfunctions send-task-success --task-token $TASK_TOKEN --task-output '{\"output\": \"0\"}' --region eu-west-1"
-        )
+    command_str = prepare_cmd(content, activity_arn)
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
@@ -156,6 +132,42 @@ def run_task(task_definition, content, activity_arn, subnets,ecs_cluster):
             }
         }
     )
+
+
+def prepare_cmd(content, activity_arn):
+    command_head = (
+        "function await_main_complete() { "
+        "while [ ! -f /tmp/workspace/main-complete ]; do "
+        "sleep 1; "
+        "done } && "
+    )
+    if content == "":
+        command_content = ""
+    else:
+        command_content = (
+            "aws s3 cp "+content+" /tmp/workspace/ && "
+            "unzip /tmp/workspace/"+re.findall(r"[^/]*\.zip",content)[0]+" -d /tmp/workspace/ && "
+        )
+    if activity_arn == "":
+        command_activity_start = ""
+        command_activity_stop = ""
+    else:
+        command_activity_start = (
+            "TASK_TOKEN=`aws stepfunctions get-activity-task --activity-arn "+activity_arn+" --region eu-west-1 | jq -r .'taskToken'` && "
+        )
+        command_activity_stop = (
+            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token $TASK_TOKEN --task-output '{\"output\": \"$result\"}' --region eu-west-1; else aws stepfunctions send-task-failure --task-token $TASK_TOKEN; fi"
+        )
+
+    command_init_complete = "touch /tmp/workspace/init_complete && "
+    command_wait = (
+        "await_main_complete  && "
+        "echo \"main complete $(cat tmp/workspace/main-complete)\""
+    )
+
+    command_str = command_head + command_content + command_init_complete + command_activity_start + command_wait + command_activity_stop
+    return command_str
+
 
 def clean_up(task_definition):
     client = boto3.client('ecs')
