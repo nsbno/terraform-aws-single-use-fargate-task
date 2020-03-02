@@ -183,7 +183,7 @@ def prepare_cmd(content, token):
         command_activity_stop = ""
     else:
         command_activity_stop = (
-            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token " + token + " --task-output '{\"output\": \"$result\"}' --region eu-west-1; else aws stepfunctions send-task-failure --task-token $TASK_TOKEN; fi"
+            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token " + token + " --task-output '{\"output\": \"$result\"}' --region eu-west-1; else aws stepfunctions send-task-failure --task-token " + token + "; fi"
         )
 
     command_init_complete = "touch /tmp/workspace/init_complete && "
