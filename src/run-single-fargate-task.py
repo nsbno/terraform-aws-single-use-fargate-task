@@ -14,14 +14,13 @@ def lambda_handler(event, context):
         'single-use-tasks',
         padded_event['image'],
         padded_event['cmd_to_run'],
-        padded_event['task_role_arn'],
+        padded_event['token'],
         padded_event['task_execution_role_arn']
     )
     logger.info(task_definition)
     run_task(
         task_definition,
         padded_event['content'],
-        padded_event['activity_arn'],
         padded_event['subnets'],
         padded_event['ecs_cluster']
     )
@@ -30,7 +29,6 @@ def lambda_handler(event, context):
 def pad_event(eventcopy):
     padded_event = eventcopy
     expected_keys = [
-        'activity_arn',
         'content',
         'cmd_to_run',
         'ecs_cluster',
@@ -38,6 +36,7 @@ def pad_event(eventcopy):
         'subnets',
         'task_role_arn',
         'task_execution_role_arn',
+        'token'
     ]
     for key in expected_keys:
         if not key in eventcopy:
@@ -137,10 +136,10 @@ def create_task_definition(task_name, image_url,cmd_to_run,task_role_arn, task_e
     return response['taskDefinition']['family'] + ":" + str(response['taskDefinition']['revision'])
 
 
-def run_task(task_definition, content, activity_arn, subnets,ecs_cluster):
+def run_task(task_definition, content, token, subnets,ecs_cluster):
     logger.info("subnets: " + str(subnets))
     client = boto3.client('ecs')
-    command_str = prepare_cmd(content, activity_arn)
+    command_str = prepare_cmd(content, token)
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
@@ -165,7 +164,7 @@ def run_task(task_definition, content, activity_arn, subnets,ecs_cluster):
     )
 
 
-def prepare_cmd(content, activity_arn):
+def prepare_cmd(content, token):
     command_head = (
         "function await_main_complete() { "
         "while [ ! -f /tmp/workspace/main-complete ]; do "
@@ -179,15 +178,11 @@ def prepare_cmd(content, activity_arn):
             "aws s3 cp "+content+" /tmp/workspace/ && "
             "unzip /tmp/workspace/"+re.findall(r"[^/]*\.zip",content)[0]+" -d /tmp/workspace/ && "
         )
-    if activity_arn == "":
-        command_activity_start = ""
+    if token == "":
         command_activity_stop = ""
     else:
-        command_activity_start = (
-            "TASK_TOKEN=`aws stepfunctions get-activity-task --activity-arn "+activity_arn+" --region eu-west-1 | jq -r .'taskToken'` && "
-        )
         command_activity_stop = (
-            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token $TASK_TOKEN --task-output '{\"output\": \"$result\"}' --region eu-west-1; else aws stepfunctions send-task-failure --task-token $TASK_TOKEN; fi"
+            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token " + token + " --task-output '{\"output\": \"$result\"}' --region eu-west-1; else aws stepfunctions send-task-failure --task-token $TASK_TOKEN; fi"
         )
 
     command_init_complete = "touch /tmp/workspace/init_complete && "
@@ -196,7 +191,7 @@ def prepare_cmd(content, activity_arn):
         "echo \"main complete $(cat tmp/workspace/main-complete)\""
     )
 
-    command_str = command_head + command_content + command_init_complete + command_activity_start + command_wait + command_activity_stop
+    command_str = command_head + command_content + command_init_complete + command_wait + command_activity_stop
     return command_str
 
 
