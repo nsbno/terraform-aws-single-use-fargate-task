@@ -14,7 +14,7 @@ def lambda_handler(event, context):
         'single-use-tasks',
         padded_event['image'],
         padded_event['cmd_to_run'],
-        padded_event['token'],
+        padded_event['task_role_arn'],
         padded_event['task_execution_role_arn']
     )
     logger.info(task_definition)
