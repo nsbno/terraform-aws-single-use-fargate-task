@@ -21,6 +21,7 @@ def lambda_handler(event, context):
     run_task(
         task_definition,
         padded_event['content'],
+        padded_event['token'],
         padded_event['subnets'],
         padded_event['ecs_cluster']
     )
