@@ -39,7 +39,7 @@ data "aws_iam_policy_document" "ecs_for_lambda" {
   statement {
     effect    = "Allow"
     actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.task_execution_role.arn]
+    resources = ["*"]
   }
   statement {
     effect    = "Allow"
