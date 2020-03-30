@@ -10,9 +10,11 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event, context):
     logger.info("event: " + json.dumps(event))
+    region = os.environ["AWS_REGION"]
     padded_event = pad_event(event.copy())
     task_definition = create_task_definition(
         "single-use-tasks",
+        region,
         padded_event["state"],
         padded_event["image"],
         padded_event["cmd_to_run"],
@@ -22,6 +24,7 @@ def lambda_handler(event, context):
     logger.info(task_definition)
     run_task(
         task_definition,
+        region,
         padded_event["content"],
         padded_event["token"],
         padded_event["subnets"],
@@ -51,6 +54,7 @@ def pad_event(eventcopy):
 
 def create_task_definition(
     task_name,
+    region,
     state,
     image_url,
     cmd_to_run,
@@ -65,7 +69,7 @@ def create_task_definition(
         "---------------\n"
         "THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:\n"
         "\n"
-        f"https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logStream:group=/aws/ecs/{task_name};prefix={task_family}-main;streamFilter=typeLogStreamPrefix\n"
+        f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={task_family}-main;streamFilter=typeLogStreamPrefix\n"
         "---------------\n"
         "\n"
         "EOF\n"
@@ -109,7 +113,7 @@ def create_task_definition(
                     "options": {
                         "awslogs-create-group": "true",
                         "awslogs-group": "/aws/ecs/" + task_name,
-                        "awslogs-region": "eu-west-1",
+                        "awslogs-region": region,
                         "awslogs-stream-prefix": task_family + "-main",
                     },
                 },
@@ -136,7 +140,7 @@ def create_task_definition(
                     "options": {
                         "awslogs-create-group": "true",
                         "awslogs-group": "/aws/ecs/" + task_name,
-                        "awslogs-region": "eu-west-1",
+                        "awslogs-region": region,
                         "awslogs-stream-prefix": task_family + "-sidecar",
                     },
                 },
@@ -150,10 +154,10 @@ def create_task_definition(
     )
 
 
-def run_task(task_definition, content, token, subnets, ecs_cluster):
+def run_task(task_definition, region, content, token, subnets, ecs_cluster):
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
-    command_str = prepare_cmd(content, token)
+    command_str = prepare_cmd(content, token, region)
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
@@ -178,7 +182,7 @@ def run_task(task_definition, content, token, subnets, ecs_cluster):
     )
 
 
-def prepare_cmd(content, token):
+def prepare_cmd(content, token, region):
     command_head = (
         "function await_main_complete() { "
         "while [ ! -f /tmp/workspace/main-complete ]; do "
@@ -200,7 +204,9 @@ def prepare_cmd(content, token):
         command_activity_stop = (
             "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token "
             + token
-            + ' --task-output \'{"output": "$result"}\' --region eu-west-1; else aws stepfunctions send-task-failure --task-token '
+            + ' --task-output \'{"output": "$result"}\' --region '
+            + region
+            + "; else aws stepfunctions send-task-failure --task-token "
             + token
             + ' --error "States.TaskFailed" --cause "$(cat /tmp/workspace/error_header.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
             + "; fi"
