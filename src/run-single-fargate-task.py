@@ -61,6 +61,16 @@ def create_task_definition(
     client = boto3.client("ecs")
     task_family = f"{state.replace(' ', '_') if state else 'one-off-task'}-{date_time_obj.strftime('%Y%m%d%H%M')}"
     shellscript = (
+        "cat <<EOF >> /tmp/workspace/main_header.log\n"
+        "---------------\n"
+        "THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:\n"
+        "\n"
+        f"https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logStream:group=/aws/ecs/single-use-tasks;prefix={task_family}-main;streamFilter=typeLogStreamPrefix\n"
+        "\n"
+        "---------------\n"
+        "\n"
+        "\n"
+        "EOF"
         "(\n"
         "function sidecar_init() { \n"
         "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
@@ -71,18 +81,8 @@ def create_task_definition(
         "rm /tmp/workspace/init_complete \n"
         "cd /tmp/workspace/ \n"
         "" + cmd_to_run + "\n"
-        "echo $? > /tmp/workspace/main-complete"
-        ") 2>&1 | tee /tmp/workspace/main.log \n"
-        "cat <<EOF >> /tmp/workspace/main.log\n"
-        "\n"
-        "\n"
-        "---------------\n"
-        "THIS IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:\n"
-        "\n"
-        f"https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logStream:group=/aws/ecs/single-use-tasks;prefix={task_family}-main;streamFilter=typeLogStreamPrefix\n"
-        "\n"
-        "---------------\n"
-        "EOF"
+        "echo $? > /tmp/workspace/main-complete\n"
+        ") 2>&1 | tee /tmp/workspace/main.log\n"
     )
     command_str = (
         "echo '"
@@ -204,7 +204,7 @@ def prepare_cmd(content, token):
             + token
             + ' --task-output \'{"output": "$result"}\' --region eu-west-1; else aws stepfunctions send-task-failure --task-token '
             + token
-            + ' --error "States.TaskFailed" --cause "$(cat /tmp/workspace/main.log | tail -c 32768)"'
+            + ' --error "States.TaskFailed" --cause "$(cat /tmp/workspace/main_header.log; cat /tmp/workspace/main.log | tail -c 32000)"'
             + "; fi"
         )
 
