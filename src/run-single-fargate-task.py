@@ -3,41 +3,45 @@ import boto3
 import re
 from datetime import datetime
 import logging
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
 def lambda_handler(event, context):
-    logger.info ("event: "+ json.dumps(event))
+    logger.info("event: " + json.dumps(event))
     padded_event = pad_event(event.copy())
     task_definition = create_task_definition(
-        'single-use-tasks',
-        padded_event['image'],
-        padded_event['cmd_to_run'],
-        padded_event['task_role_arn'],
-        padded_event['task_execution_role_arn']
+        "single-use-tasks",
+        padded_event["state"],
+        padded_event["image"],
+        padded_event["cmd_to_run"],
+        padded_event["task_role_arn"],
+        padded_event["task_execution_role_arn"],
     )
     logger.info(task_definition)
     run_task(
         task_definition,
-        padded_event['content'],
-        padded_event['activity_arn'],
-        padded_event['subnets'],
-        padded_event['ecs_cluster']
+        padded_event["content"],
+        padded_event["token"],
+        padded_event["subnets"],
+        padded_event["ecs_cluster"],
     )
     clean_up(task_definition)
+
 
 def pad_event(eventcopy):
     padded_event = eventcopy
     expected_keys = [
-        'activity_arn',
-        'content',
-        'cmd_to_run',
-        'ecs_cluster',
-        'image',
-        'subnets',
-        'task_role_arn',
-        'task_execution_role_arn',
+        "content",
+        "cmd_to_run",
+        "ecs_cluster",
+        "image",
+        "subnets",
+        "state",
+        "task_role_arn",
+        "task_execution_role_arn",
+        "token",
     ]
     for key in expected_keys:
         if not key in eventcopy:
@@ -45,127 +49,126 @@ def pad_event(eventcopy):
     return padded_event
 
 
-
-def create_task_definition(task_name, image_url,cmd_to_run,task_role_arn, task_execution_role_arn):
+def create_task_definition(
+    task_name,
+    state,
+    image_url,
+    cmd_to_run,
+    task_role_arn,
+    task_execution_role_arn,
+):
     date_time_obj = datetime.now()
-    client = boto3.client('ecs')
-    task_family = 'one-off-task-' + date_time_obj.strftime("%Y%m%d%H%M")
+    client = boto3.client("ecs")
+    task_family = f"{state.replace(' ', '_') if state else 'one-off-task'}-{date_time_obj.strftime('%Y%m%d%H%M')}"
     shellscript = (
-            "function sidecar_init() { \n"
-            "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
-            "        sleep 1; \n"
-            "    done \n"
-            "}\n"
-            "sidecar_init \n"
-            "rm /tmp/workspace/init_complete \n"
-            "cd /tmp/workspace/ \n"
-            "" + cmd_to_run + " \n"
-            "echo $? > /tmp/workspace/main-complete"
+        "function sidecar_init() { \n"
+        "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
+        "        sleep 1; \n"
+        "    done \n"
+        "}\n"
+        "sidecar_init \n"
+        "rm /tmp/workspace/init_complete \n"
+        "cd /tmp/workspace/ \n"
+        "" + cmd_to_run + " \n"
+        "echo $? > /tmp/workspace/main-complete"
     )
     command_str = (
-        "echo '" + shellscript +"' > script.sh && chmod +x script.sh && ./script.sh"
+        "echo '"
+        + shellscript
+        + "' > script.sh && chmod +x script.sh && ./script.sh"
     )
     logger.info("main command str: " + command_str)
     response = client.register_task_definition(
         family=task_family,
         taskRoleArn=task_role_arn,
         executionRoleArn=task_execution_role_arn,
-        networkMode='awsvpc',
-        cpu='256',
-        memory='512',
-        volumes=[
-            {
-                'name': 'workspace',
-                'host': {}
-            }
-        ],
-        requiresCompatibilities=[
-            'FARGATE'
-        ],
+        networkMode="awsvpc",
+        cpu="256",
+        memory="512",
+        volumes=[{"name": "workspace", "host": {}}],
+        requiresCompatibilities=["FARGATE"],
         containerDefinitions=[
             {
-                'name': task_name,
-                'image': image_url,
-                'entryPoint': [
-                    '/bin/sh',
-                    '-c'
-                ],
-                'command': [ command_str ],
-                'essential': False,
-                'logConfiguration': {
-                    'logDriver': 'awslogs',
-                    'options': {
-                        'awslogs-create-group': 'true',
-                        'awslogs-group': '/aws/ecs/' + task_name,
-                        'awslogs-region': 'eu-west-1',
-                        'awslogs-stream-prefix': task_family+'-main'
-                    }
+                "name": task_name,
+                "image": image_url,
+                "entryPoint": ["/bin/sh", "-c"],
+                "command": [command_str],
+                "essential": False,
+                "logConfiguration": {
+                    "logDriver": "awslogs",
+                    "options": {
+                        "awslogs-create-group": "true",
+                        "awslogs-group": "/aws/ecs/" + task_name,
+                        "awslogs-region": "eu-west-1",
+                        "awslogs-stream-prefix": task_family + "-main",
+                    },
                 },
-                'mountPoints': [
+                "mountPoints": [
                     {
-                        'sourceVolume': 'workspace',
-                        'containerPath': '/tmp/workspace'
+                        "sourceVolume": "workspace",
+                        "containerPath": "/tmp/workspace",
                     }
-                ]
+                ],
             },
             {
-                'name': task_name + '-activity-sidecar',
-                'image': 'vydev/awscli:latest',
-                'entryPoint': [
-                    '/bin/sh',
-                    '-c'
-                ],
-                'mountPoints': [
+                "name": task_name + "-activity-sidecar",
+                "image": "vydev/awscli:latest",
+                "entryPoint": ["/bin/sh", "-c"],
+                "mountPoints": [
                     {
-                        'sourceVolume': 'workspace',
-                        'containerPath': '/tmp/workspace'
+                        "sourceVolume": "workspace",
+                        "containerPath": "/tmp/workspace",
                     }
                 ],
-                'essential': True,
-                'logConfiguration': {
-                    'logDriver': 'awslogs',
-                    'options': {
-                        'awslogs-create-group': 'true',
-                        'awslogs-group': '/aws/ecs/' + task_name,
-                        'awslogs-region': 'eu-west-1',
-                        'awslogs-stream-prefix': task_family+'-sidecar'
-                    }
+                "essential": True,
+                "logConfiguration": {
+                    "logDriver": "awslogs",
+                    "options": {
+                        "awslogs-create-group": "true",
+                        "awslogs-group": "/aws/ecs/" + task_name,
+                        "awslogs-region": "eu-west-1",
+                        "awslogs-stream-prefix": task_family + "-sidecar",
+                    },
                 },
-            }
-        ]
+            },
+        ],
     )
-    return response['taskDefinition']['family'] + ":" + str(response['taskDefinition']['revision'])
+    return (
+        response["taskDefinition"]["family"]
+        + ":"
+        + str(response["taskDefinition"]["revision"])
+    )
 
 
-def run_task(task_definition, content, activity_arn, subnets,ecs_cluster):
+def run_task(task_definition, content, token, subnets, ecs_cluster):
     logger.info("subnets: " + str(subnets))
-    client = boto3.client('ecs')
-    command_str = prepare_cmd(content, activity_arn)
+    client = boto3.client("ecs")
+    command_str = prepare_cmd(content, token)
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
-        launchType='FARGATE',
+        launchType="FARGATE",
         taskDefinition=task_definition,
         count=1,
-        platformVersion='LATEST',
+        platformVersion="LATEST",
         overrides={
-            'containerOverrides': [
+            "containerOverrides": [
                 {
-                    'name': 'single-use-tasks-activity-sidecar',
-                    'command': [ command_str ]
+                    "name": "single-use-tasks-activity-sidecar",
+                    "command": [command_str],
                 }
             ]
         },
         networkConfiguration={
-            'awsvpcConfiguration': {
-                'subnets': subnets,
-                'assignPublicIp': 'ENABLED'
+            "awsvpcConfiguration": {
+                "subnets": subnets,
+                "assignPublicIp": "ENABLED",
             }
-        }
+        },
     )
 
 
-def prepare_cmd(content, activity_arn):
+def prepare_cmd(content, token):
     command_head = (
         "function await_main_complete() { "
         "while [ ! -f /tmp/workspace/main-complete ]; do "
@@ -176,30 +179,41 @@ def prepare_cmd(content, activity_arn):
         command_content = ""
     else:
         command_content = (
-            "aws s3 cp "+content+" /tmp/workspace/ && "
-            "unzip /tmp/workspace/"+re.findall(r"[^/]*\.zip",content)[0]+" -d /tmp/workspace/ && "
+            "aws s3 cp " + content + " /tmp/workspace/ && "
+            "unzip /tmp/workspace/"
+            + re.findall(r"[^/]*\.zip", content)[0]
+            + " -d /tmp/workspace/ && "
         )
-    if activity_arn == "":
-        command_activity_start = ""
+    if token == "":
         command_activity_stop = ""
     else:
-        command_activity_start = (
-            "TASK_TOKEN=`aws stepfunctions get-activity-task --activity-arn "+activity_arn+" --region eu-west-1 | jq -r .'taskToken'` && "
-        )
         command_activity_stop = (
-            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token $TASK_TOKEN --task-output '{\"output\": \"$result\"}' --region eu-west-1; else aws stepfunctions send-task-failure --task-token $TASK_TOKEN; fi"
+            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token "
+            + token
+            + ' --task-output \'{"output": "$result"}\' --region eu-west-1; else aws stepfunctions send-task-failure --task-token '
+            + token
+            + "; fi"
         )
 
     command_init_complete = "touch /tmp/workspace/init_complete && "
     command_wait = (
         "await_main_complete  && "
-        "echo \"main complete $(cat tmp/workspace/main-complete)\""
+        'echo "main complete $(cat tmp/workspace/main-complete)"'
     )
 
-    command_str = command_head + command_content + command_init_complete + command_activity_start + command_wait + command_activity_stop
+    command_str = (
+        command_head
+        + command_content
+        + command_init_complete
+        + command_wait
+        + command_activity_stop
+    )
     return command_str
 
 
 def clean_up(task_definition):
-    client = boto3.client('ecs')
-    response = client.deregister_task_definition(taskDefinition=task_definition)
+    client = boto3.client("ecs")
+    response = client.deregister_task_definition(
+        taskDefinition=task_definition
+    )
+
