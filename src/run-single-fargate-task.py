@@ -202,6 +202,7 @@ def prepare_cmd(content, token, region):
     if token == "":
         command_activity_stop = ""
     else:
+        # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = (
             "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token "
             + token
