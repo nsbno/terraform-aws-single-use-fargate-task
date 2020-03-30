@@ -61,6 +61,7 @@ def create_task_definition(
     client = boto3.client("ecs")
     task_family = f"{state.replace(' ', '_') if state else 'one-off-task'}-{date_time_obj.strftime('%Y%m%d%H%M')}"
     shellscript = (
+        "exec &>> /tmp/workspace/main.log"
         "function sidecar_init() { \n"
         "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
         "        sleep 1; \n"
@@ -192,6 +193,7 @@ def prepare_cmd(content, token):
             + token
             + ' --task-output \'{"output": "$result"}\' --region eu-west-1; else aws stepfunctions send-task-failure --task-token '
             + token
+            + ' --error "States.TaskFailed" --cause "$(cat /tmp/workspace/main.log | tail -20)"'
             + "; fi"
         )
 
