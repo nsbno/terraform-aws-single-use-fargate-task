@@ -1,6 +1,7 @@
 import json
 import boto3
 import re
+import os
 from datetime import datetime
 import logging
 
@@ -10,9 +11,11 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event, context):
     logger.info("event: " + json.dumps(event))
+    region = os.environ["AWS_REGION"]
     padded_event = pad_event(event.copy())
     task_definition = create_task_definition(
         "single-use-tasks",
+        region,
         padded_event["state"],
         padded_event["image"],
         padded_event["cmd_to_run"],
@@ -22,6 +25,7 @@ def lambda_handler(event, context):
     logger.info(task_definition)
     run_task(
         task_definition,
+        region,
         padded_event["content"],
         padded_event["token"],
         padded_event["subnets"],
@@ -51,6 +55,7 @@ def pad_event(eventcopy):
 
 def create_task_definition(
     task_name,
+    region,
     state,
     image_url,
     cmd_to_run,
@@ -61,6 +66,15 @@ def create_task_definition(
     client = boto3.client("ecs")
     task_family = f"{state.replace(' ', '_') if state else 'one-off-task'}-{date_time_obj.strftime('%Y%m%d%H%M')}"
     shellscript = (
+        "cat <<EOF >> /tmp/workspace/error_header.log\n"
+        "---------------\n"
+        "THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:\n"
+        "\n"
+        f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={task_family}-main;streamFilter=typeLogStreamPrefix\n"
+        "---------------\n"
+        "\n"
+        "EOF\n"
+        "(\n"
         "function sidecar_init() { \n"
         "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
         "        sleep 1; \n"
@@ -69,8 +83,9 @@ def create_task_definition(
         "sidecar_init \n"
         "rm /tmp/workspace/init_complete \n"
         "cd /tmp/workspace/ \n"
-        "" + cmd_to_run + " \n"
+        "" + cmd_to_run + "\n"
         "echo $? > /tmp/workspace/main-complete"
+        ") 2>&1 | tee /tmp/workspace/main.log\n"
     )
     command_str = (
         "echo '"
@@ -99,7 +114,7 @@ def create_task_definition(
                     "options": {
                         "awslogs-create-group": "true",
                         "awslogs-group": "/aws/ecs/" + task_name,
-                        "awslogs-region": "eu-west-1",
+                        "awslogs-region": region,
                         "awslogs-stream-prefix": task_family + "-main",
                     },
                 },
@@ -126,7 +141,7 @@ def create_task_definition(
                     "options": {
                         "awslogs-create-group": "true",
                         "awslogs-group": "/aws/ecs/" + task_name,
-                        "awslogs-region": "eu-west-1",
+                        "awslogs-region": region,
                         "awslogs-stream-prefix": task_family + "-sidecar",
                     },
                 },
@@ -140,10 +155,10 @@ def create_task_definition(
     )
 
 
-def run_task(task_definition, content, token, subnets, ecs_cluster):
+def run_task(task_definition, region, content, token, subnets, ecs_cluster):
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
-    command_str = prepare_cmd(content, token)
+    command_str = prepare_cmd(content, token, region)
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
@@ -168,7 +183,7 @@ def run_task(task_definition, content, token, subnets, ecs_cluster):
     )
 
 
-def prepare_cmd(content, token):
+def prepare_cmd(content, token, region):
     command_head = (
         "function await_main_complete() { "
         "while [ ! -f /tmp/workspace/main-complete ]; do "
@@ -187,11 +202,15 @@ def prepare_cmd(content, token):
     if token == "":
         command_activity_stop = ""
     else:
+        # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = (
             "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token "
             + token
-            + ' --task-output \'{"output": "$result"}\' --region eu-west-1; else aws stepfunctions send-task-failure --task-token '
+            + ' --task-output \'{"output": "$result"}\' --region '
+            + region
+            + "; else aws stepfunctions send-task-failure --task-token "
             + token
+            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
             + "; fi"
         )
 
