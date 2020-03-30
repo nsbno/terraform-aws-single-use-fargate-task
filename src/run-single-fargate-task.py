@@ -67,6 +67,7 @@ def create_task_definition(
         "\n"
         f"https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logStream:group=/aws/ecs/{task_name};prefix={task_family}-main;streamFilter=typeLogStreamPrefix\n"
         "---------------\n"
+        "\n"
         "EOF\n"
         "(\n"
         "function sidecar_init() { \n"
