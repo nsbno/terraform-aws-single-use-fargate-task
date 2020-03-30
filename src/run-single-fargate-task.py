@@ -61,6 +61,7 @@ def create_task_definition(
     client = boto3.client("ecs")
     task_family = f"{state.replace(' ', '_') if state else 'one-off-task'}-{date_time_obj.strftime('%Y%m%d%H%M')}"
     shellscript = (
+        "(\n"
         "function sidecar_init() { \n"
         "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
         "        sleep 1; \n"
@@ -69,8 +70,9 @@ def create_task_definition(
         "sidecar_init \n"
         "rm /tmp/workspace/init_complete \n"
         "cd /tmp/workspace/ \n"
-        "(" + cmd_to_run + ") 2>&1 | tee /tmp/workspace/main.log \n"
+        "" + cmd_to_run + "\n"
         "echo $? > /tmp/workspace/main-complete"
+        ") 2>&1 | tee /tmp/workspace/main.log \n"
     )
     command_str = (
         "echo '"
