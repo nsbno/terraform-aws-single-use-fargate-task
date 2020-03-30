@@ -73,6 +73,15 @@ def create_task_definition(
         "" + cmd_to_run + "\n"
         "echo $? > /tmp/workspace/main-complete"
         ") 2>&1 | tee /tmp/workspace/main.log \n"
+        "cat <<EOF >> /tmp/workspace/main.log\n"
+        ""
+        "---------------\n"
+        "The entire log for the task is available here:\n"
+        "\n"
+        f"https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logStream:group=/aws/ecs/single-use-tasks;prefix={task_family};streamFilter=typeLogStreamPrefix\n"
+        "\n"
+        "---------------\n"
+        "EOF"
     )
     command_str = (
         "echo '"
