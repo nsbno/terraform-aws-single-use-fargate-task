@@ -70,7 +70,7 @@ def create_task_definition(
         "---------------\n"
         "\n"
         "\n"
-        "EOF"
+        "EOF\n"
         "(\n"
         "function sidecar_init() { \n"
         "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
