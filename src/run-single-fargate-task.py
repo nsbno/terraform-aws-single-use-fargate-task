@@ -209,7 +209,7 @@ def prepare_cmd(content, token, region):
             + region
             + "; else aws stepfunctions send-task-failure --task-token "
             + token
-            + ' --error "States.TaskFailed" --cause "$(cat /tmp/workspace/error_header.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
+            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
             + "; fi"
         )
 
