@@ -203,7 +203,7 @@ def prepare_cmd(content, token):
             + token
             + ' --task-output \'{"output": "$result"}\' --region eu-west-1; else aws stepfunctions send-task-failure --task-token '
             + token
-            + ' --error "States.TaskFailed" --cause "$(cat /tmp/workspace/main.log | tail -20)"'
+            + ' --error "States.TaskFailed" --cause "$(cat /tmp/workspace/main.log | tail -c 32768)"'
             + "; fi"
         )
 
