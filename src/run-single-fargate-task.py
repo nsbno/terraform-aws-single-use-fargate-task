@@ -194,14 +194,13 @@ def prepare_cmd(content, token, region):
         command_content = ""
     else:
         command_content = (
-            's3_result="$(aws s3 cp '
-            + content
-            + ' /tmp/workspace/)" || { aws stepfunctions send-task-failure --task-token '
-            + token
-            + ' --error "NonZeroExitCode" --cause "$s3_result"; exit 1; } && '
+            "{ aws s3 cp " + content + " /tmp/workspace/ && "
             "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content)[0]
-            + " -d /tmp/workspace/ && "
+            + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
+            + "{ aws stepfunctions send-task-failure --task-token "
+            + f'"{token}"'
+            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log | tail -c 32768)"; return 1; } && '
         )
     if token == "":
         command_activity_stop = ""
