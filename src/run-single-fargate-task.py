@@ -206,7 +206,7 @@ def prepare_cmd(content, token, region):
         command_content = (
             "{ aws s3 cp " + content + " /tmp/workspace/ && "
             "unzip /tmp/workspace/"
-            + re.findall(r"[^/]*\.zip", content)[0]
+            + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
             + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
             + "{ aws stepfunctions send-task-failure --task-token "
             + f'"{token}"'
