@@ -9,10 +9,20 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def verify_inputs(event):
+    if event["content"]:
+        if not event["content"].lower().endswith(".zip"):
+            logger.error("Expected '%s' to be a zip file", event["content"])
+            raise ValueError(
+                f'Expected \'{event["content"]}\' to be a zip file'
+            )
+
+
 def lambda_handler(event, context):
     logger.info("event: " + json.dumps(event))
     region = os.environ["AWS_REGION"]
     padded_event = pad_event(event.copy())
+    verify_inputs(padded_event)
     task_definition = create_task_definition(
         "single-use-tasks",
         region,
@@ -194,10 +204,13 @@ def prepare_cmd(content, token, region):
         command_content = ""
     else:
         command_content = (
-            "aws s3 cp " + content + " /tmp/workspace/ && "
+            "{ aws s3 cp " + content + " /tmp/workspace/ && "
             "unzip /tmp/workspace/"
-            + re.findall(r"[^/]*\.zip", content)[0]
-            + " -d /tmp/workspace/ && "
+            + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
+            + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
+            + "{ aws stepfunctions send-task-failure --task-token "
+            + f'"{token}"'
+            + f' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log && echo && echo "Does the file \'{content}\' exist, and does the container have permissions to access it?" | tail -c 32768)"; return 1; }} && '
         )
     if token == "":
         command_activity_stop = ""
