@@ -200,7 +200,7 @@ def prepare_cmd(content, token, region):
             + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
             + "{ aws stepfunctions send-task-failure --task-token "
             + f'"{token}"'
-            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log | tail -c 32768)"; return 1; } && '
+            + f' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log && echo && echo "Does the file \'{content}\' exist, and does the container have permissions to access it?" | tail -c 32768)"; return 1; }} && '
         )
     if token == "":
         command_activity_stop = ""
