@@ -197,8 +197,8 @@ def prepare_cmd(content, token, region):
             "{ aws s3 cp " + content + " /tmp/workspace/ && "
             "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content)[0]
-            + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
-            + "{ aws stepfunctions send-task-failure --task-token "
+            + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
+            + "{ aws stepfunctions send-task-failure --task-token "
             + f'"{token}"'
             + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log | tail -c 32768)"; return 1; } && '
         )
