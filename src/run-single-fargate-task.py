@@ -13,7 +13,9 @@ def verify_inputs(event):
     if event["content"]:
         if not event["content"].lower().endswith(".zip"):
             logger.error("Expected '%s' to be a zip file", event["content"])
-            raise ValueError()
+            raise ValueError(
+                f'Expected \'{event["content"]}\' to be a zip file'
+            )
 
 
 def lambda_handler(event, context):
