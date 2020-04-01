@@ -194,7 +194,11 @@ def prepare_cmd(content, token, region):
         command_content = ""
     else:
         command_content = (
-            "aws s3 cp " + content + " /tmp/workspace/ && "
+            's3_result="$(aws s3 cp '
+            + content
+            + ' /tmp/workspace/)" || {aws stepfunctions send-task-failure --task-token '
+            + token
+            + '--error "NonZeroExitCode" --cause "$s3_result"; exit 1;} &&'
             "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content)[0]
             + " -d /tmp/workspace/ && "
