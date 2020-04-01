@@ -9,10 +9,18 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def verify_inputs(event):
+    if event["content"]:
+        if not event["content"].lower().endswith(".zip"):
+            logger.error("Expected '%s' to be a zip file", event["content"])
+            raise ValueError()
+
+
 def lambda_handler(event, context):
     logger.info("event: " + json.dumps(event))
     region = os.environ["AWS_REGION"]
     padded_event = pad_event(event.copy())
+    verify_inputs(padded_event)
     task_definition = create_task_definition(
         "single-use-tasks",
         region,
