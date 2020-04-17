@@ -98,7 +98,7 @@ def create_task_definition(
         "sidecar_init \n"
         "rm /tmp/workspace/init_complete \n"
         "cd /tmp/workspace/ \n"
-        "" + cmd_to_run + "\n"
+        "( " + cmd_to_run + " )\n"
         "echo $? > /tmp/workspace/main-complete"
         ") 2>&1 | tee /tmp/workspace/main.log\n"
     )
