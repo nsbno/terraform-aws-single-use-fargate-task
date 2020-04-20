@@ -75,7 +75,7 @@ def create_task_definition(
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
     task_family_prefix = (
-        re.sub("[^A-Za-z0-9-_]+", "_", state) if state else "one-off-task"
+        re.sub("[^A-Za-z0-9_-]", "_", state) if state else "one-off-task"
     )
     task_family = (
         f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M')}"
