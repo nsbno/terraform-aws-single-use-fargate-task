@@ -23,10 +23,20 @@ def lambda_handler(event, context):
     region = os.environ["AWS_REGION"]
     padded_event = pad_event(event.copy())
     verify_inputs(padded_event)
+    task_family_prefix = (
+        "_".join(
+            filter(
+                None,
+                [padded_event["state_machine_id"], padded_event["state"]],
+            )
+        )
+        or "one-off-task"
+    )
+    task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
     task_definition = create_task_definition(
         "single-use-tasks",
         region,
-        padded_event["state"],
+        task_family_prefix,
         padded_event["image"],
         padded_event["cmd_to_run"],
         padded_event["task_role_arn"],
@@ -53,6 +63,7 @@ def pad_event(eventcopy):
         "image",
         "subnets",
         "state",
+        "state_machine_id",
         "task_role_arn",
         "task_execution_role_arn",
         "token",
@@ -66,7 +77,7 @@ def pad_event(eventcopy):
 def create_task_definition(
     task_name,
     region,
-    state,
+    task_family_prefix,
     image_url,
     cmd_to_run,
     task_role_arn,
@@ -74,9 +85,6 @@ def create_task_definition(
 ):
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
-    task_family_prefix = (
-        re.sub("[^A-Za-z0-9_-]", "_", state) if state else "one-off-task"
-    )
     task_family = (
         f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M')}"
     )
