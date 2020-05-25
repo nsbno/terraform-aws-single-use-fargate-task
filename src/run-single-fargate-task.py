@@ -86,7 +86,7 @@ def create_task_definition(
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
     task_family = (
-        f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M')}"
+        f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
     )
     shellscript = (
         "cat <<EOF >> /tmp/workspace/error_header.log\n"
