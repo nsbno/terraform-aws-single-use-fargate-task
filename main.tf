@@ -22,6 +22,7 @@ resource "aws_lambda_function" "run_single_fargate_task" {
   runtime          = "python3.7"
   filename         = data.archive_file.lambda_src.output_path
   source_code_hash = filebase64sha256(data.archive_file.lambda_src.output_path)
+  timeout          = var.lambda_timeout
   tags             = var.tags
 }
 
@@ -60,3 +61,4 @@ resource "aws_iam_role_policy" "create_log_group_to_ecs" {
   policy = data.aws_iam_policy_document.create_log_groups_for_ecs.json
   role   = aws_iam_role.task_execution_role.id
 }
+
