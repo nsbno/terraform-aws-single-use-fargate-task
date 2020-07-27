@@ -268,7 +268,7 @@ def prepare_cmd(content, token, task_name, task_family, region):
         + command_init_complete
         + command_wait
         + command_activity_stop
-        + f")\n 2>&1 {command_sidecar_failure} | tee /tmp/workspace/sidecar.log"
+        + f"\n) 2>&1 {command_sidecar_failure} | tee /tmp/workspace/sidecar.log"
     )
     return command_str
 
