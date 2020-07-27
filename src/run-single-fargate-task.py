@@ -220,23 +220,25 @@ def prepare_cmd(content, token, region):
             "{ aws s3 cp " + content + " /tmp/workspace/ && "
             "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-            + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
+            + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || retries=0; while [ $retries -lt 5 ]; do '
             + "{ aws stepfunctions send-task-failure --task-token "
             + f'"{token}"'
-            + f' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log && echo && echo "Does the file \'{content}\' exist, and does the container have permissions to access it?" | tail -c 32768)"; return 1; }} && '
+            + f' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log && echo && echo "Does the file \'{content}\' exist, and does the container have permissions to access it?" | tail -c 32768)"; return 1; }} && break || ((retries++)); done && '
         )
     if token == "":
         command_activity_stop = ""
     else:
         # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = (
-            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token "
+            "&& result=$(cat /tmp/workspace/main-complete) && retries=0; while [ $retries -lt 5 ]; do if [ $result = 0 ]; then { aws stepfunctions send-task-success --task-token "
             + token
             + ' --task-output \'{"output": "$result"}\' --region '
             + region
-            + "; else aws stepfunctions send-task-failure --task-token "
+            + ' && break; } || { ((retries++) && echo "Failed to report task success"; }'
+            + "; else { aws stepfunctions send-task-failure --task-token "
             + token
             + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
+            + ' && break; } || { ((retries++) && echo "Failed to report task failure"; }'
             + "; fi"
         )
 
