@@ -241,12 +241,10 @@ def prepare_cmd(content, token, task_name, task_family, region):
         # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = (
             "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token "
-            + "2"
             + token
             + ' --task-output \'{"output": "$result"}\' --region '
             + region
             + "; else aws stepfunctions send-task-failure --task-token "
-            + "2"
             + token
             + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_main.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
             + "; fi"
