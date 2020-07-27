@@ -250,9 +250,9 @@ def prepare_cmd(content, token, task_name, task_family, region):
             + "; fi"
         )
         command_sidecar_failure = (
-            'test "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 || aws stepfunctions send-task-failure --task-token '
+            'test "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 || retries=0; while [ $retries -lt 5 ]; do { aws stepfunctions send-task-failure --task-token '
             + token
-            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)"'
+            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)" && break; } || { retries=$((retries+1)); echo "Failed to report sidecar failure"; }; done'
         )
 
     command_init_complete = " touch /tmp/workspace/init_complete && "
