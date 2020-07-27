@@ -33,8 +33,9 @@ def lambda_handler(event, context):
         or "one-off-task"
     )
     task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
+    task_name = "single-use-tasks"
     task_definition = create_task_definition(
-        "single-use-tasks",
+        task_name,
         region,
         task_family_prefix,
         padded_event["image"],
@@ -44,6 +45,7 @@ def lambda_handler(event, context):
     )
     logger.info(task_definition)
     run_task(
+        task_name,
         task_definition,
         region,
         padded_event["content"],
@@ -89,14 +91,7 @@ def create_task_definition(
         f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
     )
     shellscript = (
-        "cat <<EOF >> /tmp/workspace/error_header.log\n"
-        "---------------\n"
-        "THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:\n"
-        "\n"
-        f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={task_family}-main;streamFilter=typeLogStreamPrefix\n"
-        "---------------\n"
-        "\n"
-        "EOF\n"
+        f"{get_error_log_command('error_header_main.log', task_name, task_family + '-main', region)}"
         "(\n"
         "function sidecar_init() { \n"
         "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
@@ -171,28 +166,24 @@ def create_task_definition(
             },
         ],
     )
-    return (
-        response["taskDefinition"]["family"]
-        + ":"
-        + str(response["taskDefinition"]["revision"])
-    )
+    return response["taskDefinition"]
 
 
-def run_task(task_definition, region, content, token, subnets, ecs_cluster):
+def run_task(task_name, task_definition, region, content, token, subnets, ecs_cluster):
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
-    command_str = prepare_cmd(content, token, region)
+    command_str = prepare_cmd(content, token, task_name, f"{task_definition['family']}-sidecar", region)
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
         launchType="FARGATE",
-        taskDefinition=task_definition,
+        taskDefinition=f"{task_definition['family']}:{task_definition['revision']}",
         count=1,
         platformVersion="LATEST",
         overrides={
             "containerOverrides": [
                 {
-                    "name": "single-use-tasks-activity-sidecar",
+                    "name": "{task_name}-activity-sidecar",
                     "command": [command_str],
                 }
             ]
@@ -206,8 +197,22 @@ def run_task(task_definition, region, content, token, subnets, ecs_cluster):
     )
 
 
-def prepare_cmd(content, token, region):
+def get_error_log_command(filename, task_name, stream_prefix, region):
+    return (
+        f"cat <<EOF >> /tmp/workspace/{filename}\n"
+        "---------------\n"
+        "THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:\n"
+        "\n"
+        f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={stream_prefix};streamFilter=typeLogStreamPrefix\n"
+        "---------------\n"
+        "\n"
+        "EOF\n"
+    )
+
+
+def prepare_cmd(content, token, task_name, stream_prefix, region):
     command_head = (
+        f"{get_error_log_command('error_header_sidecar.log', task_name, task_family + '-sidecar', region)}"
         "function await_main_complete() { "
         "while [ ! -f /tmp/workspace/main-complete ]; do "
         "sleep 1; "
@@ -217,30 +222,31 @@ def prepare_cmd(content, token, region):
         command_content = ""
     else:
         command_content = (
-            "{ aws s3 cp " + content + " /tmp/workspace/ && "
-            "unzip /tmp/workspace/"
+            "aws s3 cp " + content + " /tmp/workspace/ && "
+            + "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-            + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || retries=0; while [ $retries -lt 5 ]; do '
-            + "{ aws stepfunctions send-task-failure --task-token "
-            + f'"{token}2"'
-            + f' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log && echo && echo "Does the file \'{content}\' exist, and does the container have permissions to access it?" | tail -c 32768)"; return 1; }} && break || {{ ((retries++)) && echo "Failed to report task failure"; }}; done && '
         )
+    command_sidecar_failure = ""
     if token == "":
         command_activity_stop = ""
     else:
         # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = (
-            "&& result=$(cat /tmp/workspace/main-complete) && retries=0; while [ $retries -lt 5 ]; do if [ $result = 0 ]; then { aws stepfunctions send-task-success --task-token "
-            + token + "2"
+            "&& result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then { aws stepfunctions send-task-success --task-token "
+            + token
+            + "2"
             + ' --task-output \'{"output": "$result"}\' --region '
             + region
-            + ' && break; } || { ((retries++) && echo "Failed to report task success"; }'
             + "; else { aws stepfunctions send-task-failure --task-token "
-            + token + "2"
-            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
-            + ' && break; } || { ((retries++) && echo "Failed to report task failure"; }'
+            + token
+            + "2"
+            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_main.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
             + "; fi"
         )
+        command_sidecar_failure = (
+            + "|| aws stepfunctions send-task-failure --task-token "
+            + token
+            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)"'
 
     command_init_complete = "touch /tmp/workspace/init_complete && "
     command_wait = (
@@ -249,11 +255,13 @@ def prepare_cmd(content, token, region):
     )
 
     command_str = (
-        command_head
+        "(\n"
+        + command_head
         + command_content
         + command_init_complete
         + command_wait
         + command_activity_stop
+        + f")\n 2>&1 {command_sidecar_failure} | tee /tmp/workspace/sidecar.log"
     )
     return command_str
 
@@ -261,6 +269,6 @@ def prepare_cmd(content, token, region):
 def clean_up(task_definition):
     client = boto3.client("ecs")
     response = client.deregister_task_definition(
-        taskDefinition=task_definition
+        taskDefinition=f"{task_definition['family']}:{task_definition['revision']}",
     )
 
