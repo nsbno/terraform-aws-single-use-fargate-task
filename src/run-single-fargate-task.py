@@ -231,8 +231,10 @@ def prepare_cmd(content, token, task_name, task_family, region):
             + " /tmp/workspace/ && "
             + "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
+            + " -d /tmp/workspace"
+            + " &&"
         )
-    command_sidecar_failure = ""
+    command_sidecar_failure = ":"
     if token == "":
         command_activity_stop = ""
     else:
@@ -250,25 +252,25 @@ def prepare_cmd(content, token, task_name, task_family, region):
             + "; fi"
         )
         command_sidecar_failure = (
-            "|| aws stepfunctions send-task-failure --task-token "
+            'test "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 || aws stepfunctions send-task-failure --task-token '
             + token
             + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)"'
         )
 
-    command_init_complete = "touch /tmp/workspace/init_complete && "
+    command_init_complete = " touch /tmp/workspace/init_complete && "
     command_wait = (
-        "await_main_complete  && "
-        'echo "main complete $(cat tmp/workspace/main-complete)"'
+        "await_main_complete && "
+        'echo "main complete $(cat /tmp/workspace/main-complete)"'
     )
 
     command_str = (
-        "(\n"
+        "{ (\n"
         + command_head
         + command_content
         + command_init_complete
         + command_wait
         + command_activity_stop
-        + f"\n) 2>&1 {command_sidecar_failure} | tee /tmp/workspace/sidecar.log"
+        + f"\n); echo $? > /tmp/workspace/sidecar_exit_status; }} 2>&1 | tee /tmp/workspace/sidecar.log; {command_sidecar_failure}"
     )
     return command_str
 
