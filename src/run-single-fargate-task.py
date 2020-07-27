@@ -187,7 +187,7 @@ def run_task(
         overrides={
             "containerOverrides": [
                 {
-                    "name": "{task_name}-activity-sidecar",
+                    "name": f"{task_name}-activity-sidecar",
                     "command": [command_str],
                 }
             ]
