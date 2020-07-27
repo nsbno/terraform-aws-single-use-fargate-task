@@ -169,10 +169,14 @@ def create_task_definition(
     return response["taskDefinition"]
 
 
-def run_task(task_name, task_definition, region, content, token, subnets, ecs_cluster):
+def run_task(
+    task_name, task_definition, region, content, token, subnets, ecs_cluster
+):
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
-    command_str = prepare_cmd(content, token, task_name, f"{task_definition['family']}-sidecar", region)
+    command_str = prepare_cmd(
+        content, token, task_name, task_definition["family"], region,
+    )
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
@@ -210,7 +214,7 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
     )
 
 
-def prepare_cmd(content, token, task_name, stream_prefix, region):
+def prepare_cmd(content, token, task_name, task_family, region):
     command_head = (
         f"{get_error_log_command('error_header_sidecar.log', task_name, task_family + '-sidecar', region)}"
         "function await_main_complete() { "
@@ -222,7 +226,9 @@ def prepare_cmd(content, token, task_name, stream_prefix, region):
         command_content = ""
     else:
         command_content = (
-            "aws s3 cp " + content + " /tmp/workspace/ && "
+            "aws s3 cp "
+            + content
+            + " /tmp/workspace/ && "
             + "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
         )
@@ -244,9 +250,10 @@ def prepare_cmd(content, token, task_name, stream_prefix, region):
             + "; fi"
         )
         command_sidecar_failure = (
-            + "|| aws stepfunctions send-task-failure --task-token "
+            "|| aws stepfunctions send-task-failure --task-token "
             + token
             + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)"'
+        )
 
     command_init_complete = "touch /tmp/workspace/init_complete && "
     command_wait = (
