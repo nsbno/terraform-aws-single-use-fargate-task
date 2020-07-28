@@ -33,8 +33,9 @@ def lambda_handler(event, context):
         or "one-off-task"
     )
     task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
+    task_name = "single-use-tasks"
     task_definition = create_task_definition(
-        "single-use-tasks",
+        task_name,
         region,
         task_family_prefix,
         padded_event["image"],
@@ -44,6 +45,7 @@ def lambda_handler(event, context):
     )
     logger.info(task_definition)
     run_task(
+        task_name,
         task_definition,
         region,
         padded_event["content"],
@@ -109,6 +111,11 @@ def create_task_definition(
         f"( {cmd_to_run or 'true'} )\n"
         "echo $? > /tmp/workspace/main-complete"
         ") 2>&1 | tee /tmp/workspace/main.log\n"
+    error_log_command = get_error_log_command(
+        "/tmp/workspace/error_header_main.log",
+        task_name,
+        task_family + "-main",
+        region,
     )
     command_str = (
         "echo '"
@@ -171,28 +178,28 @@ def create_task_definition(
             },
         ],
     )
-    return (
-        response["taskDefinition"]["family"]
-        + ":"
-        + str(response["taskDefinition"]["revision"])
-    )
+    return response["taskDefinition"]
 
 
-def run_task(task_definition, region, content, token, subnets, ecs_cluster):
+def run_task(
+    task_name, task_definition, region, content, token, subnets, ecs_cluster
+):
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
-    command_str = prepare_cmd(content, token, region)
+    command_str = prepare_cmd(
+        content, token, task_name, task_definition["family"], region,
+    )
     logger.info("sidecar command str: " + command_str)
     response = client.run_task(
         cluster=ecs_cluster,
         launchType="FARGATE",
-        taskDefinition=task_definition,
+        taskDefinition=f"{task_definition['family']}:{task_definition['revision']}",
         count=1,
         platformVersion="LATEST",
         overrides={
             "containerOverrides": [
                 {
-                    "name": "single-use-tasks-activity-sidecar",
+                    "name": f"{task_name}-activity-sidecar",
                     "command": [command_str],
                 }
             ]
@@ -206,14 +213,37 @@ def run_task(task_definition, region, content, token, subnets, ecs_cluster):
     )
 
 
-def prepare_cmd(content, token, region):
-    command_head = (
-        "mkdir -p /tmp/workspace/entrypoint && "
-        "function await_main_complete() { "
-        "while [ ! -f /tmp/workspace/main-complete ]; do "
-        "sleep 1; "
-        "done } && "
+def get_error_log_command(filename, task_name, stream_prefix, region):
+    """Return a shell command for generating a file containing the header of an error log"""
+    error_log_command = f"""
+        cat <<EOF >> {filename}
+        ---------------
+        THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:
+
+        https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={stream_prefix};streamFilter=typeLogStreamPrefix
+        ---------------
+
+        EOF
+    """
+    # Strip leading whitespace to avoid syntax errors due to heredoc indentation
+    return "\n".join([line.lstrip() for line in error_log_command.split("\n")])
+
+
+def prepare_cmd(content, token, task_name, task_family, region):
+    error_log_command = get_error_log_command(
+        "/tmp/workspace/error_header_sidecar.log",
+        task_name,
+        task_family + "-sidecar",
+        region,
     )
+    command_head = f"""
+        mkdir -p /tmp/workspace/entrypoint
+        function await_main_complete() {{
+            while [ ! -f /tmp/workspace/main-complete ]; do
+                sleep 1
+            done
+        }}
+    """
     if content == "":
         command_content = ""
     else:
@@ -260,6 +290,6 @@ def prepare_cmd(content, token, region):
 def clean_up(task_definition):
     client = boto3.client("ecs")
     response = client.deregister_task_definition(
-        taskDefinition=task_definition
+        taskDefinition=f"{task_definition['family']}:{task_definition['revision']}",
     )
 
