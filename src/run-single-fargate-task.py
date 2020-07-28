@@ -100,7 +100,7 @@ def create_task_definition(
         "}\n"
         "sidecar_init \n"
         "rm /tmp/workspace/init_complete \n"
-        "cd /tmp/workspace/ \n"
+        "cd /tmp/workspace/entrypoint \n"
         f"( set -e; {cmd_to_run or 'true'} )\n"
         "echo $? > /tmp/workspace/main-complete"
         ") 2>&1 | tee /tmp/workspace/main.log\n"
@@ -219,6 +219,7 @@ def prepare_cmd(content, token, task_name, task_family, region):
     command_head = (
         "set -eu; "
         f"{get_error_log_command('error_header_sidecar.log', task_name, task_family + '-sidecar', region)}"
+        "mkdir -p /tmp/workspace/entrypoint && "
         "function await_main_complete() { "
         "while [ ! -f /tmp/workspace/main-complete ]; do "
         "sleep 1; "
@@ -233,7 +234,7 @@ def prepare_cmd(content, token, task_name, task_family, region):
             + " /tmp/workspace/ && "
             + "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-            + " -d /tmp/workspace"
+            + " -d /tmp/workspace/entrypoint"
             + " &&"
         )
     command_sidecar_failure = ":"
