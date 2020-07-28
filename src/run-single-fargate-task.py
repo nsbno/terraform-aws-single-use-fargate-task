@@ -202,6 +202,7 @@ def run_task(
 
 
 def get_error_log_command(filename, task_name, stream_prefix, region):
+    """Return a shell command for generating a file containing the header of an error log"""
     return (
         f"cat <<EOF >> /tmp/workspace/{filename}\n"
         "---------------\n"
@@ -259,7 +260,7 @@ def prepare_cmd(content, token, task_name, task_family, region):
     command_init_complete = " touch /tmp/workspace/init_complete && "
     command_wait = (
         "await_main_complete && "
-        'echo "main complete $(cat /tmp/workspace/main-complete)"'
+        'echo "main exited with status code $(cat /tmp/workspace/main-complete)"'
     )
 
     command_str = (
