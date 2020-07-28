@@ -101,7 +101,7 @@ def create_task_definition(
         "sidecar_init \n"
         "rm /tmp/workspace/init_complete \n"
         "cd /tmp/workspace/ \n"
-        f"( set -e {cmd_to_run or 'true'} )\n"
+        f"( set -e; {cmd_to_run or 'true'} )\n"
         "echo $? > /tmp/workspace/main-complete"
         ") 2>&1 | tee /tmp/workspace/main.log\n"
     )
@@ -217,7 +217,7 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
 
 def prepare_cmd(content, token, task_name, task_family, region):
     command_head = (
-        "set -eu"
+        "set -eu; "
         f"{get_error_log_command('error_header_sidecar.log', task_name, task_family + '-sidecar', region)}"
         "function await_main_complete() { "
         "while [ ! -f /tmp/workspace/main-complete ]; do "
