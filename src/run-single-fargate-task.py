@@ -90,25 +90,34 @@ def create_task_definition(
     task_family = (
         f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
     )
-    shellscript = (
-        f"{get_error_log_command('error_header_main.log', task_name, task_family + '-main', region)}"
-        "(\n"
-        "function sidecar_init() { \n"
-        "    while [ ! -f /tmp/workspace/init_complete ]; do \n"
-        "        sleep 1; \n"
-        "    done \n"
-        "}\n"
-        "sidecar_init \n"
-        "rm /tmp/workspace/init_complete \n"
-        "cd /tmp/workspace/entrypoint \n"
-        f"( set -e; {cmd_to_run or 'true'} )\n"
-        "echo $? > /tmp/workspace/main-complete"
-        ") 2>&1 | tee /tmp/workspace/main.log\n"
+    error_log_command = get_error_log_command(
+        "/tmp/workspace/error_header_main.log",
+        task_name,
+        task_family + "-main",
+        region,
     )
-    command_str = (
-        "echo '"
-        + shellscript
-        + "' > script.sh && chmod +x script.sh && ./script.sh"
+    command_str = f"""
+        cat <<EOF >> script.sh
+        {error_log_command}
+        (
+        function sidecar_init() {{
+            while [ ! -f /tmp/workspace/init_complete ]; do
+                sleep 1
+            done
+        }}
+        sidecar_init
+        rm /tmp/workspace/init_complete
+        cd /tmp/workspace/entrypoint
+        ( set -e; {cmd_to_run or 'true'} )
+        echo $? > /tmp/workspace/main-complete
+        ) 2>&1 | tee /tmp/workspace/main.log
+        EOF
+        chmod +x script.sh
+        ./script.sh
+    """
+    # Strip leading whitespace to avoid syntax errors due to heredoc indentation
+    command_str = "\n".join(
+        [line.lstrip() for line in command_str.split("\n")]
     )
     logger.info("main command str: " + command_str)
     response = client.register_task_definition(
@@ -203,77 +212,89 @@ def run_task(
 
 def get_error_log_command(filename, task_name, stream_prefix, region):
     """Return a shell command for generating a file containing the header of an error log"""
-    return (
-        f"cat <<EOF >> /tmp/workspace/{filename}\n"
-        "---------------\n"
-        "THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:\n"
-        "\n"
-        f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={stream_prefix};streamFilter=typeLogStreamPrefix\n"
-        "---------------\n"
-        "\n"
-        "EOF\n"
-    )
+    error_log_command = f"""
+        cat <<EOF >> {filename}
+        ---------------
+        THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:
+
+        https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={stream_prefix};streamFilter=typeLogStreamPrefix
+        ---------------
+
+        EOF
+    """
+    # Strip leading whitespace to avoid syntax errors due to heredoc indentation
+    return "\n".join([line.lstrip() for line in error_log_command.split("\n")])
 
 
 def prepare_cmd(content, token, task_name, task_family, region):
-    command_head = (
-        "set -eu; "
-        f"{get_error_log_command('error_header_sidecar.log', task_name, task_family + '-sidecar', region)}"
-        "mkdir -p /tmp/workspace/entrypoint && "
-        "function await_main_complete() { "
-        "while [ ! -f /tmp/workspace/main-complete ]; do "
-        "sleep 1; "
-        "done } && "
+    error_log_command = get_error_log_command(
+        "/tmp/workspace/error_header_sidecar.log",
+        task_name,
+        task_family + "-sidecar",
+        region,
     )
+    command_head = f"""
+        mkdir -p /tmp/workspace/entrypoint
+        function await_main_complete() {{
+            while [ ! -f /tmp/workspace/main-complete ]; do
+                sleep 1
+            done
+        }}
+    """
     if content == "":
         command_content = ""
     else:
-        command_content = (
-            "aws s3 cp "
-            + content
-            + " /tmp/workspace/ && "
-            + "unzip /tmp/workspace/"
-            + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-            + " -d /tmp/workspace/entrypoint"
-            + " &&"
-        )
-    command_sidecar_failure = ":"
+        zip_file = re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
+        command_content = f"aws s3 cp {content} /tmp/workspace/ && unzip /tmp/workspace/{zip_file} -d /tmp/workspace/entrypoint &&"
+    command_sidecar_failure = ""
     if token == "":
         command_activity_stop = ""
     else:
         # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
-        command_activity_stop = (
-            ' && result="$(cat /tmp/workspace/main-complete)" && if [ "$result" -eq 0 ]; then aws stepfunctions send-task-success --task-token '
-            + token
-            + ' --task-output \'{"output": "$result"}\' --region '
-            + region
-            + "; else aws stepfunctions send-task-failure --task-token "
-            + token
-            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_main.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"'
-            + "; fi"
-        )
-        command_sidecar_failure = (
-            'if [ ! "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 ]; then retries=0; while [ "$retries" -lt 5 ]; do aws stepfunctions send-task-failure --task-token '
-            + token
-            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)" && break || { retries="$((retries+1))"; echo "Failed to report sidecar failure"; }; done; fi'
-        )
+        command_activity_stop = f"""
+            result="$(cat /tmp/workspace/main-complete)"
+            if [ "$result" -eq 0 ]; then
+                aws stepfunctions send-task-success --task-token "{token}" --task-output '{{"output": "$result"}}' --region "{region}"
+            else
+                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_main.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"
+            fi
+        """
+        command_sidecar_failure = f"""
+            if [ ! "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 ]; then
+                retries=0
+                while [ "$retries" -lt 5 ]; do
+                    if aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)"; then
+                        break
+                    fi
+                    retries="$((retries+1))"
+                    echo "Failed to report sidecar failure"
+                done
+            fi
+        """
 
-    command_init_complete = " touch /tmp/workspace/init_complete && "
-    command_wait = (
-        "await_main_complete && "
-        'echo "main exited with status code $(cat /tmp/workspace/main-complete)"'
-    )
+    command_init_complete = "touch /tmp/workspace/init_complete"
+    command_wait = """
+        await_main_complete
+        echo "main exited with status code $(cat /tmp/workspace/main-complete)"
+    """
 
-    command_str = (
-        "{ (\n"
-        + command_head
-        + command_content
-        + command_init_complete
-        + command_wait
-        + command_activity_stop
-        + f"\n); echo $? > /tmp/workspace/sidecar_exit_status; }} 2>&1 | tee /tmp/workspace/sidecar.log; {command_sidecar_failure}"
-    )
-    return command_str
+    command_str = f"""
+        {{
+        (
+        set -eu
+        {error_log_command}
+        {command_head}
+        {command_content}
+        {command_init_complete}
+        {command_wait}
+        {command_activity_stop}
+        )
+        echo $? > /tmp/workspace/sidecar_exit_status
+        }} 2>&1 | tee /tmp/workspace/sidecar.log
+        {command_sidecar_failure}
+    """
+    # Strip leading whitespace to avoid syntax errors due to heredoc indentation
+    return "\n".join([line.lstrip() for line in command_str.split("\n")])
 
 
 def clean_up(task_definition):
