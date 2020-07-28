@@ -217,6 +217,7 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
 
 def prepare_cmd(content, token, task_name, task_family, region):
     command_head = (
+        "set -eu; "
         f"{get_error_log_command('error_header_sidecar.log', task_name, task_family + '-sidecar', region)}"
         "mkdir -p /tmp/workspace/entrypoint && "
         "function await_main_complete() { "
@@ -242,7 +243,7 @@ def prepare_cmd(content, token, task_name, task_family, region):
     else:
         # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = (
-            " && result=$(cat /tmp/workspace/main-complete) && if [ $result = 0 ]; then aws stepfunctions send-task-success --task-token "
+            ' && result="$(cat /tmp/workspace/main-complete)" && if [ "$result" -eq 0 ]; then aws stepfunctions send-task-success --task-token '
             + token
             + ' --task-output \'{"output": "$result"}\' --region '
             + region
@@ -252,9 +253,9 @@ def prepare_cmd(content, token, task_name, task_family, region):
             + "; fi"
         )
         command_sidecar_failure = (
-            'test "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 || { retries=0; while [ $retries -lt 5 ]; do aws stepfunctions send-task-failure --task-token '
+            'if [ "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 ]; then retries=0; while [ "$retries" -lt 5 ]; do aws stepfunctions send-task-failure --task-token '
             + token
-            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)" && break || { retries=$((retries+1)); echo "Failed to report sidecar failure"; }; done; }'
+            + ' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)" && break || { retries=$((retries+1)); echo "Failed to report sidecar failure"; }; done; fi'
         )
 
     command_init_complete = " touch /tmp/workspace/init_complete && "
@@ -264,7 +265,6 @@ def prepare_cmd(content, token, task_name, task_family, region):
     )
 
     command_str = (
-        "set -eu; "
         "{ (\n"
         + command_head
         + command_content
