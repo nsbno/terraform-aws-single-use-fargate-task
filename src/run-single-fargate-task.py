@@ -105,7 +105,7 @@ def create_task_definition(
         "}\n"
         "sidecar_init \n"
         "rm /tmp/workspace/init_complete \n"
-        "cd /tmp/workspace/ \n"
+        "cd /tmp/workspace/entrypoint \n"
         f"( {cmd_to_run or 'true'} )\n"
         "echo $? > /tmp/workspace/main-complete"
         ") 2>&1 | tee /tmp/workspace/main.log\n"
@@ -208,6 +208,7 @@ def run_task(task_definition, region, content, token, subnets, ecs_cluster):
 
 def prepare_cmd(content, token, region):
     command_head = (
+        "mkdir -p /tmp/workspace/entrypoint && "
         "function await_main_complete() { "
         "while [ ! -f /tmp/workspace/main-complete ]; do "
         "sleep 1; "
@@ -220,7 +221,7 @@ def prepare_cmd(content, token, region):
             "{ aws s3 cp " + content + " /tmp/workspace/ && "
             "unzip /tmp/workspace/"
             + re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-            + ' -d /tmp/workspace/; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
+            + ' -d /tmp/workspace/entrypoint; echo $? > /tmp/workspace/mount_complete; } 2>&1 | tee /tmp/workspace/sidecar.log && test "$(cat /tmp/workspace/mount_complete)" = 0 || '
             + "{ aws stepfunctions send-task-failure --task-token "
             + f'"{token}"'
             + f' --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar.log && echo && echo "Does the file \'{content}\' exist, and does the container have permissions to access it?" | tail -c 32768)"; return 1; }} && '
