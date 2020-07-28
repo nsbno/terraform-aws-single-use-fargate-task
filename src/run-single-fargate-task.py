@@ -217,7 +217,6 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
 
 def prepare_cmd(content, token, task_name, task_family, region):
     command_head = (
-        "set -eu; "
         f"{get_error_log_command('error_header_sidecar.log', task_name, task_family + '-sidecar', region)}"
         "mkdir -p /tmp/workspace/entrypoint && "
         "function await_main_complete() { "
@@ -265,6 +264,7 @@ def prepare_cmd(content, token, task_name, task_family, region):
     )
 
     command_str = (
+        "set -eu; "
         "{ (\n"
         + command_head
         + command_content
