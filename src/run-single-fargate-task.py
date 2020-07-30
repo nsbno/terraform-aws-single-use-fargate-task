@@ -2,6 +2,7 @@ import json
 import boto3
 import re
 import os
+import subprocess
 from datetime import datetime
 import logging
 
@@ -15,6 +16,15 @@ def verify_inputs(event):
             logger.error("Expected '%s' to be a zip file", event["content"])
             raise ValueError(
                 f'Expected \'{event["content"]}\' to be a zip file'
+            )
+    if event["cmd_to_run"]:
+        with open("/tmp/cmd_to_run.sh", "w") as f:
+            f.write(event["cmd_to_run"])
+        try:
+            subprocess.check_call("sh -n /tmp/cmd_to_run.sh", shell=True)
+        except subprocess.CalledProcessError:
+            raise ValueError(
+                "'cmd_to_run' does not contain a valid shell command"
             )
 
 
@@ -114,7 +124,6 @@ def create_task_definition(
         echo $? > /tmp/workspace/main-complete
         }} 2>&1 | tee /tmp/workspace/main.log
     """
-
     # Strip leading whitespace to avoid syntax errors due to heredoc indentation
     shellscript = "\n".join(
         [line.lstrip() for line in shellscript.split("\n")]
