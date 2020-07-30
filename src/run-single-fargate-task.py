@@ -242,7 +242,10 @@ def prepare_cmd(content, token, task_name, task_family, region):
         command_content = ""
     else:
         zip_file = re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-        command_content = f"aws s3 cp {content} /tmp/workspace/ && unzip /tmp/workspace/{zip_file} -d /tmp/workspace/entrypoint"
+        command_content = f"""
+            aws s3 cp {content} /tmp/workspace/
+            unzip /tmp/workspace/{zip_file} -d /tmp/workspace/entrypoint
+        """
     command_sidecar_failure = ""
     if token == "":
         command_activity_stop = ""
