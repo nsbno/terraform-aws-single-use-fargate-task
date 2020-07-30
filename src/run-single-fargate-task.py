@@ -97,8 +97,10 @@ def create_task_definition(
         region,
     )
     shellscript = f"""
-        {error_log_command}
+        {{
         (
+        set -eu
+        {error_log_command}
         function sidecar_init() {{
             while [ ! -f /tmp/workspace/init_complete ]; do
                 sleep 1
@@ -107,9 +109,10 @@ def create_task_definition(
         sidecar_init
         rm /tmp/workspace/init_complete
         cd /tmp/workspace/entrypoint
-        ( set -e; {cmd_to_run or 'true'} )
+        ( set +u; {cmd_to_run or 'true'} )
+        )
         echo $? > /tmp/workspace/main-complete
-        ) 2>&1 | tee /tmp/workspace/main.log
+        }} 2>&1 | tee /tmp/workspace/main.log
     """
 
     # Strip leading whitespace to avoid syntax errors due to heredoc indentation
