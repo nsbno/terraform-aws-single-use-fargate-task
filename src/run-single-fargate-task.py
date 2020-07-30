@@ -117,7 +117,7 @@ def create_task_definition(
         [line.lstrip() for line in shellscript.split("\n")]
     )
     command_str = f"echo '{shellscript}' > script.sh && chmod +x script.sh && ./script.sh"
-    logger.info("main command str: " + command_str)
+    logger.info("main command str: " + json.dumps(command_str))
     response = client.register_task_definition(
         family=task_family,
         taskRoleArn=task_role_arn,
@@ -184,7 +184,7 @@ def run_task(
     command_str = prepare_cmd(
         content, token, task_name, task_definition["family"], region,
     )
-    logger.info("sidecar command str: " + command_str)
+    logger.info("sidecar command str: " + json.dumps(command_str))
     response = client.run_task(
         cluster=ecs_cluster,
         launchType="FARGATE",
