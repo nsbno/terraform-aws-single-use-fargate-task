@@ -111,7 +111,7 @@ def create_task_definition(
         (
         set -eu
         {error_log_command}
-        function sidecar_init() {{
+        sidecar_init() {{
             while [ ! -f /tmp/workspace/init_complete ]; do
                 sleep 1
             done
@@ -244,7 +244,7 @@ def prepare_cmd(content, token, task_name, task_family, region):
     )
     command_head = f"""
         mkdir -p /tmp/workspace/entrypoint
-        function await_main_complete() {{
+        await_main_complete() {{
             while [ ! -f /tmp/workspace/main-complete ]; do
                 sleep 1
             done
