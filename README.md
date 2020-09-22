@@ -32,21 +32,23 @@ The task CPU (CPU units or vCPUs) for the Fargate task, defaults to `"256"`. (_S
 #### task_memory (Optional)
 The task memory (MiB) for the Fargate task, defaults to `"512"`. (_Supported values can be found here: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html._)
 
-#### ecs_cluster
-The name of the ECS cluster on which to run the fargate task
+#### task_role_arn (Optional\*)
+The arn of the role the task will assume when running.
 
-#### image
-The docker uri of the container image to launch
-
-#### subnets
-A list of subnets into which this fargate container can be launched
+_\*Required if the Lambda is used in a Step Functions state machine with the `token` attribute passed in as Lambda input._
 
 #### task_execution_role_arn
-The arn of the role given to Fargate to run tasks - this is typically a role with the managed 
-`AmazonECSTaskExecutionRolePolicy` policy attached
+The arn of the role given to Fargate to run tasks - this is typically a role with the managed `AmazonECSTaskExecutionRolePolicy` policy attached.
 
-#### task_role_arn
-The arn of the role the task will assume when running
+#### ecs_cluster
+The name of the ECS cluster on which to run the Fargate task.
+
+#### image
+The Docker URI of the container image to launch.
+
+#### subnets
+A list of subnets into which this Fargate container can be launched.
+
 
 ###### Example
 ```json
