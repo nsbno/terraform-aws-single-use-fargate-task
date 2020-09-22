@@ -42,6 +42,8 @@ def lambda_handler(event, context):
         )
         or "one-off-task"
     )
+    task_cpu = padded_event.get("task_cpu", 256)
+    task_memory = padded_event.get("task_memory", 512)
     task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
     task_name = "single-use-tasks"
     task_definition = create_task_definition(
@@ -52,6 +54,8 @@ def lambda_handler(event, context):
         padded_event["cmd_to_run"],
         padded_event["task_role_arn"],
         padded_event["task_execution_role_arn"],
+        task_cpu,
+        task_memory
     )
     logger.info(task_definition)
     run_task(
@@ -94,6 +98,8 @@ def create_task_definition(
     cmd_to_run,
     task_role_arn,
     task_execution_role_arn,
+    task_cpu,
+    task_memory
 ):
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
@@ -135,8 +141,8 @@ def create_task_definition(
         taskRoleArn=task_role_arn,
         executionRoleArn=task_execution_role_arn,
         networkMode="awsvpc",
-        cpu="256",
-        memory="512",
+        cpu=task_cpu,
+        memory=task_memory,
         volumes=[{"name": "workspace", "host": {}}],
         requiresCompatibilities=["FARGATE"],
         containerDefinitions=[
