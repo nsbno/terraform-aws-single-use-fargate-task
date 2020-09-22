@@ -20,6 +20,9 @@ def verify_inputs(event):
             raise ValueError(
                 f'Expected \'{event["content"]}\' to be a zip file'
             )
+    if not isinstance(event["task_cpu"], str) or not isinstance(event["task_memory"], str):
+        raise ValueError("Task CPU and task memory need to be strings")
+
     if event["cmd_to_run"]:
         with open("/tmp/cmd_to_run.sh", "w") as f:
             f.write(event["cmd_to_run"])
