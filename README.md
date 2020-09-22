@@ -27,10 +27,10 @@ A command to be run in the container - this will be run after any content has be
 The s3 uri of a zip file to be unzipped into a folder mounted at `/tmp/workspace`.
 
 #### task_cpu (Optional)
-The task CPU (CPU units or vCPUs) for the Fargate task, defaults to 256. (_Supported values can be found here: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html._)
+The task CPU (CPU units or vCPUs) for the Fargate task, defaults to `"256"`. (_Supported values can be found here: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html._)
 
 #### task_memory (Optional)
-The task memory (MiB) for the Fargate task, defaults to 512. (_Supported values can be found here: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html._)
+The task memory (MiB) for the Fargate task, defaults to `"512"`. (_Supported values can be found here: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html._)
 
 #### ecs_cluster
 The name of the ECS cluster on which to run the fargate task
