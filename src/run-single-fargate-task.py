@@ -31,7 +31,7 @@ def verify_inputs(event):
 def lambda_handler(event, context):
     logger.info("event: " + json.dumps(event))
     region = os.environ["AWS_REGION"]
-    padded_event = pad_event(event.copy())
+    padded_event = set_defaults(event)
     verify_inputs(padded_event)
     task_family_prefix = (
         "_".join(
@@ -70,25 +70,21 @@ def lambda_handler(event, context):
     clean_up(task_definition)
 
 
-def pad_event(eventcopy):
-    padded_event = eventcopy
-    expected_keys = [
-        "content",
-        "cmd_to_run",
-        "ecs_cluster",
-        "image",
-        "subnets",
-        "state",
-        "state_machine_id",
-        "task_role_arn",
-        "task_execution_role_arn",
-        "token",
-    ]
-    for key in expected_keys:
-        if not key in eventcopy:
-            padded_event[key] = ""
-    return padded_event
-
+def set_defaults(event):
+    defaults = {
+        "content": "",
+        "cmd_to_run": "",
+        "image": "",
+        "state": "",
+        "task_memory": "512",
+        "task_cpu": "256",
+        "state_machine_id": "",
+        "token": "",
+    }
+    return {
+        **defaults,
+        **event
+    }
 
 def create_task_definition(
     task_name,
