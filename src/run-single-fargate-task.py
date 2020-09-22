@@ -11,9 +11,9 @@ logger.setLevel(logging.INFO)
 
 
 def verify_inputs(event):
-    #required_keys = ["ecs_cluster", "image", "subnets", "task_execution_role_arn", "task_role_arn"]
-    #if not all(key in event for key in required_keys):
-    #    raise ValueError("Missing one or more required keys: %s", required_keys)
+    required_keys = ["ecs_cluster", "image", "subnets", "task_execution_role_arn"]
+    if not all(key in event for key in required_keys):
+        raise ValueError("Missing one or more required keys: %s", required_keys)
     if event["content"]:
         if not event["content"].lower().endswith(".zip"):
             logger.error("Expected '%s' to be a zip file", event["content"])
@@ -48,8 +48,6 @@ def lambda_handler(event, context):
         )
         or "one-off-task"
     )
-    task_cpu = padded_event.get("task_cpu", "256")
-    task_memory = padded_event.get("task_memory", "512")
     task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
     task_name = "single-use-tasks"
     task_definition = create_task_definition(
@@ -60,8 +58,8 @@ def lambda_handler(event, context):
         padded_event["cmd_to_run"],
         padded_event["task_role_arn"],
         padded_event["task_execution_role_arn"],
-        task_cpu,
-        task_memory
+        padded_event["task_cpu"],
+        padded_event["task_memory"]
     )
     logger.info(task_definition)
     run_task(
@@ -77,13 +75,12 @@ def lambda_handler(event, context):
 
 
 def set_defaults(event):
+    """Set default values for optional arguments"""
     defaults = {
         "content": "",
         "cmd_to_run": "",
         "image": "",
         "task_role_arn": "",
-        "task_execution_role_arn": "",
-        "ecs_cluster": "",
         "state": "",
         "task_memory": "512",
         "task_cpu": "256",
