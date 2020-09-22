@@ -42,8 +42,8 @@ def lambda_handler(event, context):
         )
         or "one-off-task"
     )
-    task_cpu = padded_event.get("task_cpu", 256)
-    task_memory = padded_event.get("task_memory", 512)
+    task_cpu = padded_event.get("task_cpu", "256")
+    task_memory = padded_event.get("task_memory", "512")
     task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
     task_name = "single-use-tasks"
     task_definition = create_task_definition(
