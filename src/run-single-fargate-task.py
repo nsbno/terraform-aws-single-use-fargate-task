@@ -11,6 +11,9 @@ logger.setLevel(logging.INFO)
 
 
 def verify_inputs(event):
+    required_keys = ["ecs_cluster", "image", "subnets", "task_execution_role_arn", "task_role_arn"]
+    if not all(key in required_keys for key in event):
+        raise ValueError("Missing one or more required keys: %s", required_keys)
     if event["content"]:
         if not event["content"].lower().endswith(".zip"):
             logger.error("Expected '%s' to be a zip file", event["content"])
