@@ -11,12 +11,18 @@ logger.setLevel(logging.INFO)
 
 
 def verify_inputs(event):
+    required_keys = ["ecs_cluster", "image", "subnets", "task_execution_role_arn"]
+    if not all(key in event for key in required_keys):
+        raise ValueError("Missing one or more required keys: %s", required_keys)
     if event["content"]:
         if not event["content"].lower().endswith(".zip"):
             logger.error("Expected '%s' to be a zip file", event["content"])
             raise ValueError(
                 f'Expected \'{event["content"]}\' to be a zip file'
             )
+    if not isinstance(event["task_cpu"], str) or not isinstance(event["task_memory"], str):
+        raise ValueError("Task CPU and task memory need to be strings")
+
     if event["cmd_to_run"]:
         with open("/tmp/cmd_to_run.sh", "w") as f:
             f.write(event["cmd_to_run"])
@@ -31,7 +37,7 @@ def verify_inputs(event):
 def lambda_handler(event, context):
     logger.info("event: " + json.dumps(event))
     region = os.environ["AWS_REGION"]
-    padded_event = pad_event(event.copy())
+    padded_event = set_defaults(event)
     verify_inputs(padded_event)
     task_family_prefix = (
         "_".join(
@@ -52,6 +58,8 @@ def lambda_handler(event, context):
         padded_event["cmd_to_run"],
         padded_event["task_role_arn"],
         padded_event["task_execution_role_arn"],
+        padded_event["task_cpu"],
+        padded_event["task_memory"]
     )
     logger.info(task_definition)
     run_task(
@@ -66,25 +74,23 @@ def lambda_handler(event, context):
     clean_up(task_definition)
 
 
-def pad_event(eventcopy):
-    padded_event = eventcopy
-    expected_keys = [
-        "content",
-        "cmd_to_run",
-        "ecs_cluster",
-        "image",
-        "subnets",
-        "state",
-        "state_machine_id",
-        "task_role_arn",
-        "task_execution_role_arn",
-        "token",
-    ]
-    for key in expected_keys:
-        if not key in eventcopy:
-            padded_event[key] = ""
-    return padded_event
-
+def set_defaults(event):
+    """Set default values for optional arguments"""
+    defaults = {
+        "content": "",
+        "cmd_to_run": "",
+        "image": "",
+        "task_role_arn": "",
+        "state": "",
+        "task_memory": "512",
+        "task_cpu": "256",
+        "state_machine_id": "",
+        "token": "",
+    }
+    return {
+        **defaults,
+        **event
+    }
 
 def create_task_definition(
     task_name,
@@ -94,6 +100,8 @@ def create_task_definition(
     cmd_to_run,
     task_role_arn,
     task_execution_role_arn,
+    task_cpu,
+    task_memory
 ):
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
@@ -135,8 +143,8 @@ def create_task_definition(
         taskRoleArn=task_role_arn,
         executionRoleArn=task_execution_role_arn,
         networkMode="awsvpc",
-        cpu="256",
-        memory="512",
+        cpu=task_cpu,
+        memory=task_memory,
         volumes=[{"name": "workspace", "host": {}}],
         requiresCompatibilities=["FARGATE"],
         containerDefinitions=[
