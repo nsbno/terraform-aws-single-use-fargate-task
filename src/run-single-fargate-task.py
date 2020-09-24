@@ -172,7 +172,7 @@ def create_task_definition(
             },
             {
                 "name": task_name + "-activity-sidecar",
-                "image": "vydev/awscli:latest",
+                "image": "vydev/awscli:dev",
                 "entryPoint": ["/bin/sh", "-c"],
                 "mountPoints": [
                     {
