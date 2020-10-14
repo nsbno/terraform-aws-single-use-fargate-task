@@ -28,12 +28,13 @@ A command to be run in the container - this will be run after any content has be
 
 #### content (Optional)
 The S3 URI of a ZIP file to be unzipped into a folder mounted at `/tmp/workspace/entrypoint/default`.
+
 _(Note: The attribute `mountpoints` and `content` are mutually exclusive. Only 0 or exactly one of them can be used)._
 
 #### mountpoints (Optional)
-An object containing different mountpoints and their associated S3 ZIP files. 
-```
-{
+An object containing different mountpoints and their associated S3 ZIP files, e.g.:
+```json
+"mountpoints": {
   "<mount-name>": "<s3-uri>",
   "<mount-name>": "<s3-uri>"
 }
