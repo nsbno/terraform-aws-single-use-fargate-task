@@ -14,13 +14,26 @@ def verify_inputs(event):
     required_keys = ["ecs_cluster", "image", "subnets", "task_execution_role_arn"]
     if not all(key in event for key in required_keys):
         raise ValueError("Missing one or more required keys: %s", required_keys)
+    if event["content"] and event["mountpoints"]:
+        logger.error(
+            "The arguments 'content' and 'mountpoints' are mutually exclusive."
+        )
+        raise ValueError()
     if event["content"]:
         if not event["content"].lower().endswith(".zip"):
             logger.error("Expected '%s' to be a zip file", event["content"])
             raise ValueError(
                 f'Expected \'{event["content"]}\' to be a zip file'
             )
-    if not isinstance(event["task_cpu"], str) or not isinstance(event["task_memory"], str):
+    if event["mountpoints"]:
+        for name, content in event["mountpoints"].items():
+            if not content.lower().endswith(".zip"):
+                logger.error(
+                    "Expected content '%s' of mountpoint '%s' to be a zip file",
+                    content,
+                    name,
+                )
+                raise ValueError()
         raise ValueError("Task CPU and task memory need to be strings")
 
     if event["cmd_to_run"]:
@@ -48,6 +61,15 @@ def lambda_handler(event, context):
         )
         or "one-off-task"
     )
+    mountpoints = padded_event["mountpoints"] or (
+        {"default": padded_event["content"]} if padded_event["content"] else {}
+    )
+    entrypoint = (
+        f"/tmp/workspace/entrypoint/{list(mountpoints.keys())[0]}"
+        if len(mountpoints) == 1
+        else "/tmp/workspace/entrypoint"
+    )
+
     task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
     task_name = "single-use-tasks"
     task_definition = create_task_definition(
@@ -58,6 +80,7 @@ def lambda_handler(event, context):
         padded_event["cmd_to_run"],
         padded_event["task_role_arn"],
         padded_event["task_execution_role_arn"],
+        entrypoint,
         padded_event["task_cpu"],
         padded_event["task_memory"]
     )
@@ -66,7 +89,7 @@ def lambda_handler(event, context):
         task_name,
         task_definition,
         region,
-        padded_event["content"],
+        mountpoints,
         padded_event["token"],
         padded_event["subnets"],
         padded_event["ecs_cluster"],
@@ -81,16 +104,15 @@ def set_defaults(event):
         "cmd_to_run": "",
         "image": "",
         "task_role_arn": "",
+        "mountpoints": {},
         "state": "",
         "task_memory": "512",
         "task_cpu": "256",
         "state_machine_id": "",
         "token": "",
     }
-    return {
-        **defaults,
-        **event
-    }
+    return {**defaults, **event}
+
 
 def create_task_definition(
     task_name,
@@ -100,6 +122,7 @@ def create_task_definition(
     cmd_to_run,
     task_role_arn,
     task_execution_role_arn,
+    entrypoint,
     task_cpu,
     task_memory
 ):
@@ -126,7 +149,7 @@ def create_task_definition(
         }}
         sidecar_init
         rm /tmp/workspace/init_complete
-        cd /tmp/workspace/entrypoint
+        cd {entrypoint}
         ( set +u; {cmd_to_run or 'true'} )
         )
         echo $? > /tmp/workspace/main-complete
@@ -197,12 +220,22 @@ def create_task_definition(
 
 
 def run_task(
-    task_name, task_definition, region, content, token, subnets, ecs_cluster
+    task_name,
+    task_definition,
+    region,
+    mountpoints,
+    token,
+    subnets,
+    ecs_cluster,
 ):
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
     command_str = prepare_cmd(
-        content, token, task_name, task_definition["family"], region,
+        mountpoints,
+        token,
+        task_name,
+        task_definition["family"],
+        region,
     )
     logger.info("sidecar command str: " + json.dumps(command_str))
     response = client.run_task(
@@ -243,7 +276,7 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
     return error_log_command
 
 
-def prepare_cmd(content, token, task_name, task_family, region):
+def prepare_cmd(mountpoints, token, task_name, task_family, region):
     error_log_command = get_error_log_command(
         "/tmp/workspace/error_header_sidecar.log",
         task_name,
@@ -258,13 +291,14 @@ def prepare_cmd(content, token, task_name, task_family, region):
             done
         }}
     """
-    if content == "":
-        command_content = ""
-    else:
+    command_content = ""
+    for name, content in mountpoints.items():
         zip_file = re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-        command_content = f"""
+        destination = "/tmp/workspace/entrypoint/{name}"
+        command_content += f"""
+            mkdir -p {destination}
             aws s3 cp {content} /tmp/workspace/
-            unzip /tmp/workspace/{zip_file} -d /tmp/workspace/entrypoint
+            unzip /tmp/workspace/{zip_file} -d {destination}
         """
     command_sidecar_failure = ""
     if token == "":
