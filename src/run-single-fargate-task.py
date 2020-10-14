@@ -72,7 +72,7 @@ def lambda_handler(event, context):
         or "one-off-task"
     )
     mountpoints = padded_event["mountpoints"] or (
-        {"default": padded_event["content"]} if padded_event["content"] else {}
+        {"content": padded_event["content"]} if padded_event["content"] else {}
     )
     entrypoint = (
         f"/tmp/workspace/entrypoint/{list(mountpoints.keys())[0]}"
