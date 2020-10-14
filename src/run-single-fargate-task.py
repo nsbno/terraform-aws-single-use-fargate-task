@@ -11,9 +11,16 @@ logger.setLevel(logging.INFO)
 
 
 def verify_inputs(event):
-    required_keys = ["ecs_cluster", "image", "subnets", "task_execution_role_arn"]
+    required_keys = [
+        "ecs_cluster",
+        "image",
+        "subnets",
+        "task_execution_role_arn",
+    ]
     if not all(key in event for key in required_keys):
-        raise ValueError("Missing one or more required keys: %s", required_keys)
+        raise ValueError(
+            "Missing one or more required keys: %s", required_keys
+        )
     if event["content"] and event["mountpoints"]:
         logger.error(
             "The arguments 'content' and 'mountpoints' are mutually exclusive."
@@ -34,6 +41,9 @@ def verify_inputs(event):
                     name,
                 )
                 raise ValueError()
+    if not isinstance(event["task_cpu"], str) or not isinstance(
+        event["task_memory"], str
+    ):
         raise ValueError("Task CPU and task memory need to be strings")
 
     if event["cmd_to_run"]:
@@ -82,7 +92,7 @@ def lambda_handler(event, context):
         padded_event["task_execution_role_arn"],
         entrypoint,
         padded_event["task_cpu"],
-        padded_event["task_memory"]
+        padded_event["task_memory"],
     )
     logger.info(task_definition)
     run_task(
@@ -124,7 +134,7 @@ def create_task_definition(
     task_execution_role_arn,
     entrypoint,
     task_cpu,
-    task_memory
+    task_memory,
 ):
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
@@ -357,4 +367,3 @@ def clean_up(task_definition):
     response = client.deregister_task_definition(
         taskDefinition=f"{task_definition['family']}:{task_definition['revision']}",
     )
-
