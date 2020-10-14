@@ -304,7 +304,7 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
     command_content = ""
     for name, content in mountpoints.items():
         zip_file = re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-        destination = "/tmp/workspace/entrypoint/{name}"
+        destination = f"/tmp/workspace/entrypoint/{name}"
         command_content += f"""
             mkdir -p {destination}
             aws s3 cp {content} /tmp/workspace/
