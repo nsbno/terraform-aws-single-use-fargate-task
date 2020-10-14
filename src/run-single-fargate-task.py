@@ -22,25 +22,18 @@ def verify_inputs(event):
             "Missing one or more required keys: %s", required_keys
         )
     if event["content"] and event["mountpoints"]:
-        logger.error(
+        raise ValueError(
             "The arguments 'content' and 'mountpoints' are mutually exclusive."
         )
-        raise ValueError()
     if event["content"]:
         if not event["content"].lower().endswith(".zip"):
-            logger.error("Expected '%s' to be a zip file", event["content"])
-            raise ValueError(
-                f'Expected \'{event["content"]}\' to be a zip file'
-            )
+            raise ValueError(f"Expected '{event['content']}' to be a zip file")
     if event["mountpoints"]:
         for name, content in event["mountpoints"].items():
             if not content.lower().endswith(".zip"):
-                logger.error(
-                    "Expected content '%s' of mountpoint '%s' to be a zip file",
-                    content,
-                    name,
+                raise ValueError(
+                    f"Expected content '{content}' of mountpoint '{name}' to be a zip file"
                 )
-                raise ValueError()
     if not isinstance(event["task_cpu"], str) or not isinstance(
         event["task_memory"], str
     ):
