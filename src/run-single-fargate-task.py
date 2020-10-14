@@ -76,7 +76,7 @@ def lambda_handler(event, context):
     )
     entrypoint = (
         f"/tmp/workspace/entrypoint/{list(mountpoints.keys())[0]}"
-        if len(mountpoints) > 1
+        if len(mountpoints) == 1
         else "/tmp/workspace/entrypoint"
     )
 
