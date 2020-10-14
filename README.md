@@ -5,7 +5,11 @@ The module creates a Lambda that can be called to run a command of your choosing
 
 The task can optionally be used inside an AWS Step Functions state machine -- reporting success or failure to the state machine based on the exit code of the user-supplied shell command.
 
-If a single ZIP file is input, the working directory of the container will be inside the unzipped folder. If multiple ZIP files are input, the working directory of the container will be one level above the unzipped folders.
+### Working Directory
+Short notes on the working directory of the container:
+- If neither `content` nor `mountpoints` are supplied, the working directory is an empty directory `/tmp/workspace/entrypoint`.
+- If `content` is supplied, or `mountpoints` is supplied and contains only a single key-value pair, the working directory of the container will be inside the unzipped archive.
+- If `mountpoints` contains multiple key-value pairs, the working directory of the container will be one level above the unzipped archives.
 
 ### Expected Attributes
 The lambda expects a json input with the following attributes
