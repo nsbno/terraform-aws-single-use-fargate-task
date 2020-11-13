@@ -13,6 +13,11 @@ output "task_execution_role_arn" {
   value       = aws_iam_role.task_execution_role.arn
 }
 
+output "task_execution_role_id" {
+  description = "The name of the task execution role created"
+  value       = aws_iam_role.task_execution_role.id
+}
+
 output "ecs_cluster_arn" {
   description = "The arn of the ECS cluster created"
   value       = aws_ecs_cluster.ecs_cluster.arn
