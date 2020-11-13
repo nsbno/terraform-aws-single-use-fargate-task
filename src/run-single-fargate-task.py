@@ -86,6 +86,7 @@ def lambda_handler(event, context):
         entrypoint,
         padded_event["task_cpu"],
         padded_event["task_memory"],
+        padded_event["credentials_secret_arn"],
     )
     logger.info(task_definition)
     run_task(
@@ -113,6 +114,7 @@ def set_defaults(event):
         "task_cpu": "256",
         "state_machine_id": "",
         "token": "",
+        "credentials_secret_arn": "",
     }
     return {**defaults, **event}
 
@@ -128,6 +130,7 @@ def create_task_definition(
     entrypoint,
     task_cpu,
     task_memory,
+    credentials_secret_arn,
 ):
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
@@ -195,6 +198,15 @@ def create_task_definition(
                         "containerPath": "/tmp/workspace",
                     }
                 ],
+                **(
+                    {
+                        "repositoryCredentials": {
+                            "credentialsParameter": credentials_secret_arn
+                        }
+                    }
+                    if credentials_secret_arn
+                    else {}
+                ),
             },
             {
                 "name": task_name + "-activity-sidecar",
@@ -216,6 +228,15 @@ def create_task_definition(
                         "awslogs-stream-prefix": task_family + "-sidecar",
                     },
                 },
+                **(
+                    {
+                        "repositoryCredentials": {
+                            "credentialsParameter": credentials_secret_arn
+                        }
+                    }
+                    if credentials_secret_arn
+                    else {}
+                ),
             },
         ],
     )
