@@ -49,6 +49,9 @@ The task CPU (CPU units or vCPUs) for the Fargate task, defaults to `"256"`. (_S
 #### task_memory (Optional)
 The task memory (MiB) for the Fargate task, defaults to `"512"`. (_Supported values can be found here: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html._)
 
+#### credentials_secret_arn (Optional)
+The ARN of an AWS Secrets Manager secret that contains private registry credentials. This can be used to authenticate pulls against Docker Hub, etc. The secret needs to contain a `username` and `password` key. (_NOTE: Make sure that the task execution role is allowed to read and decrypt the secret_).
+
 #### task_role_arn (Optional\*)
 The arn of the role the task will assume when running.
 
