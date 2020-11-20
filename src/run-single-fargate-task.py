@@ -97,6 +97,8 @@ def lambda_handler(event, context):
         padded_event["token"],
         padded_event["subnets"],
         padded_event["ecs_cluster"],
+        padded_event["assign_public_ip"],
+        padded_event["security_groups"],
     )
     clean_up(task_definition)
 
@@ -105,6 +107,8 @@ def set_defaults(event):
     """Set default values for optional arguments"""
     defaults = {
         "content": "",
+        "security_groups": [],
+        "assign_public_ip": True,
         "cmd_to_run": "",
         "image": "",
         "task_role_arn": "",
@@ -251,6 +255,8 @@ def run_task(
     token,
     subnets,
     ecs_cluster,
+    assign_public_ip,
+    security_groups,
 ):
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
@@ -279,7 +285,14 @@ def run_task(
         networkConfiguration={
             "awsvpcConfiguration": {
                 "subnets": subnets,
-                "assignPublicIp": "ENABLED",
+                **(
+                    {"securityGroups": security_groups}
+                    if len(security_groups)
+                    else {}
+                ),
+                "assignPublicIp": "ENABLED"
+                if assign_public_ip
+                else "DISABLED",
             }
         },
     )

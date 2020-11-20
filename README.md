@@ -52,6 +52,12 @@ The task memory (MiB) for the Fargate task, defaults to `"512"`. (_Supported val
 #### credentials_secret_arn (Optional)
 The ARN of an AWS Secrets Manager secret that contains private registry credentials. This can be used to authenticate pulls against Docker Hub, etc. The secret needs to contain a `username` and `password` key. (_NOTE: Make sure that the task execution role is allowed to read and decrypt the secret_).
 
+#### assign_public_ip (Optional)
+Whether to assign a public IP to the Elastic Network Interface of the Fargate task.
+
+#### security_groups (Optional)
+A list of IDs of security groups associated with the Fargate task. If not specified, the default security group for the VPC will be used.
+
 #### task_role_arn (Optional\*)
 The arn of the role the task will assume when running.
 
