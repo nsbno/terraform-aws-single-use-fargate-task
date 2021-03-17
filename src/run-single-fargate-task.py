@@ -9,6 +9,12 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Global variables to simplify code
+WORKSPACE = "/tmp/workspace"
+MAIN_CONTAINER_FOLDER = f"{WORKSPACE}/main-container"
+SIDECAR_CONTAINER_FOLDER = f"{WORKSPACE}/sidecar-container"
+ENTRYPOINT_FOLDER = f"{WORKSPACE}/entrypoint"
+
 
 def verify_inputs(event):
     required_keys = [
@@ -68,9 +74,9 @@ def lambda_handler(event, context):
         {"content": padded_event["content"]} if padded_event["content"] else {}
     )
     entrypoint = (
-        f"/tmp/workspace/entrypoint/{list(mountpoints.keys())[0]}"
+        f"{ENTRYPOINT_FOLDER}/{list(mountpoints.keys())[0]}"
         if len(mountpoints) == 1
-        else "/tmp/workspace/entrypoint"
+        else ENTRYPOINT_FOLDER
     )
 
     task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
@@ -142,28 +148,33 @@ def create_task_definition(
         f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
     )
     error_log_command = get_error_log_command(
-        "/tmp/workspace/error_header_main.log",
+        f"{MAIN_CONTAINER_FOLDER}/error_header.log",
         task_name,
         task_family + "-main",
         region,
     )
     shellscript = f"""
+        sidecar_preinit() {{
+            while [ ! -f {SIDECAR_CONTAINER_FOLDER}/preinit-complete ]; do
+                sleep 1
+            done
+        }}
+        sidecar_init() {{
+            while [ ! -f {SIDECAR_CONTAINER_FOLDER}/init-complete ]; do
+                sleep 1
+            done
+        }}
+        sidecar_preinit
         {{
         (
         set -eu
         {error_log_command}
-        sidecar_init() {{
-            while [ ! -f /tmp/workspace/init_complete ]; do
-                sleep 1
-            done
-        }}
         sidecar_init
-        rm /tmp/workspace/init_complete
         cd {entrypoint}
         ( set +u; {cmd_to_run or 'true'} )
         )
-        echo $? > /tmp/workspace/main-complete
-        }} 2>&1 | tee /tmp/workspace/main.log
+        echo $? > {MAIN_CONTAINER_FOLDER}/complete
+        }} 2>&1 | tee {MAIN_CONTAINER_FOLDER}/main.log
     """
     # Strip leading whitespace to avoid syntax errors due to heredoc indentation
     shellscript = "\n".join(
@@ -199,7 +210,7 @@ def create_task_definition(
                 "mountPoints": [
                     {
                         "sourceVolume": "workspace",
-                        "containerPath": "/tmp/workspace",
+                        "containerPath": WORKSPACE,
                     }
                 ],
                 **(
@@ -219,7 +230,7 @@ def create_task_definition(
                 "mountPoints": [
                     {
                         "sourceVolume": "workspace",
-                        "containerPath": "/tmp/workspace",
+                        "containerPath": WORKSPACE,
                     }
                 ],
                 "essential": True,
@@ -315,27 +326,29 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
 
 def prepare_cmd(mountpoints, token, task_name, task_family, region):
     error_log_command = get_error_log_command(
-        "/tmp/workspace/error_header_sidecar.log",
+        f"{SIDECAR_CONTAINER_FOLDER}/error_header.log",
         task_name,
         task_family + "-sidecar",
         region,
     )
     command_head = f"""
-        mkdir -p /tmp/workspace/entrypoint
+        mkdir -m +t -p {MAIN_CONTAINER_FOLDER}
+        mkdir -p {ENTRYPOINT_FOLDER}
         await_main_complete() {{
-            while [ ! -f /tmp/workspace/main-complete ]; do
+            while [ ! -f {MAIN_CONTAINER_FOLDER}/complete ]; do
                 sleep 1
             done
         }}
+        touch {SIDECAR_CONTAINER_FOLDER}/preinit-complete
     """
     command_content = ""
     for name, content in mountpoints.items():
         zip_file = re.findall(r"[^/]*\.zip", content, flags=re.IGNORECASE)[0]
-        destination = f"/tmp/workspace/entrypoint/{name}"
+        destination = f"{ENTRYPOINT_FOLDER}/{name}"
         command_content += f"""
             mkdir -p {destination}
-            aws s3 cp {content} /tmp/workspace/
-            unzip /tmp/workspace/{zip_file} -d {destination}
+            aws s3 cp {content} {SIDECAR_CONTAINER_FOLDER}
+            unzip {SIDECAR_CONTAINER_FOLDER}/{zip_file} -d {destination}
         """
     command_sidecar_failure = ""
     if token == "":
@@ -343,31 +356,32 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
     else:
         # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = f"""
-            result="$(cat /tmp/workspace/main-complete)"
+            result="$(cat {MAIN_CONTAINER_FOLDER}/complete)"
             if [ "$result" -eq 0 ]; then
                 aws stepfunctions send-task-success --task-token "{token}" --task-output '{{"output": "$result"}}' --region "{region}"
             else
-                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_main.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"
+                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {MAIN_CONTAINER_FOLDER}/error_header.log; cat {MAIN_CONTAINER_FOLDER}/main.log | tail -c 32000 | tail -15)"
             fi
         """
         command_sidecar_failure = f"""
-            if [ ! "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 ]; then
+            if [ ! "$(cat {SIDECAR_CONTAINER_FOLDER}/exitcode)" -eq 0 ]; then
                 retries=0
                 while [ "$retries" -lt 5 ]; do
-                    aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)" && break
+                    aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {SIDECAR_CONTAINER_FOLDER}/error_header.log; cat {SIDECAR_CONTAINER_FOLDER}/sidecar.log | tail -c 32000 | tail -15)" && break
                     retries="$((retries+1))"
                     echo "Failed to report sidecar failure"
                 done
             fi
         """
 
-    command_init_complete = "touch /tmp/workspace/init_complete"
-    command_wait = """
+    command_init_complete = f"touch {SIDECAR_CONTAINER_FOLDER}/init-complete"
+    command_wait = f"""
         await_main_complete
-        echo "main exited with status code $(cat /tmp/workspace/main-complete)"
+        echo "main exited with status code $(cat {MAIN_CONTAINER_FOLDER}/complete)"
     """
 
     command_str = f"""
+        mkdir -p {SIDECAR_CONTAINER_FOLDER}
         {{
         (
         set -eu
@@ -378,8 +392,8 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
         {command_wait}
         {command_activity_stop}
         )
-        echo $? > /tmp/workspace/sidecar_exit_status
-        }} 2>&1 | tee /tmp/workspace/sidecar.log
+        echo $? > {SIDECAR_CONTAINER_FOLDER}/exitcode
+        }} 2>&1 | tee {SIDECAR_CONTAINER_FOLDER}/sidecar.log
         {command_sidecar_failure}
     """
     # Strip leading whitespace to avoid syntax errors due to heredoc indentation
