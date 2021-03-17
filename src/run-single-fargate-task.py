@@ -164,8 +164,8 @@ def create_task_definition(
                 sleep 1
             done
         }}
-        {{
         sidecar_preinit
+        {{
         (
         set -eu
         {error_log_command}
