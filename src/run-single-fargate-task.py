@@ -142,28 +142,34 @@ def create_task_definition(
         f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
     )
     error_log_command = get_error_log_command(
-        "/tmp/workspace/error_header_main.log",
+        "/tmp/workspace/main-container/error_header_main.log",
         task_name,
         task_family + "-main",
         region,
     )
     shellscript = f"""
+        whoami
+        ls -laR /tmp/workspace
+        while [ ! -d /tmp/workspace/main-container ]; do
+            sleep 1
+        done
+        ls -laR /tmp/workspace
         {{
         (
         set -eu
         {error_log_command}
         sidecar_init() {{
-            while [ ! -f /tmp/workspace/init_complete ]; do
+            while [ ! -f /tmp/workspace/main-container/sidecar-complete ]; do
                 sleep 1
             done
         }}
         sidecar_init
-        rm /tmp/workspace/init_complete
+        rm /tmp/workspace/main-container/sidecar-complete
         cd {entrypoint}
         ( set +u; {cmd_to_run or 'true'} )
         )
-        echo $? > /tmp/workspace/main-complete
-        }} 2>&1 | tee /tmp/workspace/main.log
+        echo $? > /tmp/workspace/main-container/complete
+        }} 2>&1 | tee /tmp/workspace/main-container/main.log
     """
     # Strip leading whitespace to avoid syntax errors due to heredoc indentation
     shellscript = "\n".join(
@@ -321,9 +327,10 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
         region,
     )
     command_head = f"""
+        mkdir -m +t -p /tmp/workspace/main-container
         mkdir -p /tmp/workspace/entrypoint
         await_main_complete() {{
-            while [ ! -f /tmp/workspace/main-complete ]; do
+            while [ ! -f /tmp/workspace/main-container/complete ]; do
                 sleep 1
             done
         }}
@@ -343,11 +350,11 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
     else:
         # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = f"""
-            result="$(cat /tmp/workspace/main-complete)"
+            result="$(cat /tmp/workspace/main-container/complete)"
             if [ "$result" -eq 0 ]; then
                 aws stepfunctions send-task-success --task-token "{token}" --task-output '{{"output": "$result"}}' --region "{region}"
             else
-                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_main.log; cat /tmp/workspace/main.log | tail -c 32000 | tail -15)"
+                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/main-container/error_header_main.log; cat /tmp/workspace/main-container/main.log | tail -c 32000 | tail -15)"
             fi
         """
         command_sidecar_failure = f"""
@@ -361,10 +368,12 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
             fi
         """
 
-    command_init_complete = "touch /tmp/workspace/init_complete"
+    command_init_complete = (
+        "touch /tmp/workspace/main-container/sidecar-complete"
+    )
     command_wait = """
         await_main_complete
-        echo "main exited with status code $(cat /tmp/workspace/main-complete)"
+        echo "main exited with status code $(cat /tmp/workspace/main-container/complete)"
     """
 
     command_str = f"""
