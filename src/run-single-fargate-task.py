@@ -142,29 +142,28 @@ def create_task_definition(
         f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
     )
     error_log_command = get_error_log_command(
-        "/tmp/workspace/main-container/error_header_main.log",
+        "/tmp/workspace/main-container/error_header.log",
         task_name,
         task_family + "-main",
         region,
     )
     shellscript = f"""
-        whoami
-        ls -laR /tmp/workspace
-        while [ ! -d /tmp/workspace/main-container ]; do
-            sleep 1
-        done
-        ls -laR /tmp/workspace
-        {{
-        (
-        set -eu
-        {error_log_command}
-        sidecar_init() {{
-            while [ ! -f /tmp/workspace/main-container/sidecar-complete ]; do
+        sidecar_preinit() {{
+            while [ ! -f /tmp/workspace/sidecar-container/preinit-complete ]; do
                 sleep 1
             done
         }}
+        sidecar_init() {{
+            while [ ! -f /tmp/workspace/sidecar-container/init-complete ]; do
+                sleep 1
+            done
+        }}
+        {{
+        sidecar_preinit
+        (
+        set -eu
+        {error_log_command}
         sidecar_init
-        rm /tmp/workspace/main-container/sidecar-complete
         cd {entrypoint}
         ( set +u; {cmd_to_run or 'true'} )
         )
@@ -321,7 +320,7 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
 
 def prepare_cmd(mountpoints, token, task_name, task_family, region):
     error_log_command = get_error_log_command(
-        "/tmp/workspace/error_header_sidecar.log",
+        "/tmp/workspace/sidecar-container/error_header.log",
         task_name,
         task_family + "-sidecar",
         region,
@@ -334,6 +333,7 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
                 sleep 1
             done
         }}
+        touch /tmp/workspace/sidecar-container/preinit-complete
     """
     command_content = ""
     for name, content in mountpoints.items():
@@ -354,14 +354,14 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
             if [ "$result" -eq 0 ]; then
                 aws stepfunctions send-task-success --task-token "{token}" --task-output '{{"output": "$result"}}' --region "{region}"
             else
-                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/main-container/error_header_main.log; cat /tmp/workspace/main-container/main.log | tail -c 32000 | tail -15)"
+                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/main-container/error_header.log; cat /tmp/workspace/main-container/main.log | tail -c 32000 | tail -15)"
             fi
         """
         command_sidecar_failure = f"""
-            if [ ! "$(cat /tmp/workspace/sidecar_exit_status)" -eq 0 ]; then
+            if [ ! "$(cat /tmp/workspace/sidecar-container/exitcode)" -eq 0 ]; then
                 retries=0
                 while [ "$retries" -lt 5 ]; do
-                    aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/error_header_sidecar.log; cat /tmp/workspace/sidecar.log | tail -c 32000 | tail -15)" && break
+                    aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat /tmp/workspace/sidecar-container/error_header.log; cat /tmp/workspace/sidecar-container/sidecar.log | tail -c 32000 | tail -15)" && break
                     retries="$((retries+1))"
                     echo "Failed to report sidecar failure"
                 done
@@ -369,7 +369,7 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
         """
 
     command_init_complete = (
-        "touch /tmp/workspace/main-container/sidecar-complete"
+        "touch /tmp/workspace/sidecar-container/init-complete"
     )
     command_wait = """
         await_main_complete
@@ -377,6 +377,7 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
     """
 
     command_str = f"""
+        mkdir -p /tmp/workspace/sidecar-container
         {{
         (
         set -eu
@@ -387,8 +388,8 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
         {command_wait}
         {command_activity_stop}
         )
-        echo $? > /tmp/workspace/sidecar_exit_status
-        }} 2>&1 | tee /tmp/workspace/sidecar.log
+        echo $? > /tmp/workspace/sidecar-container/exitcode
+        }} 2>&1 | tee /tmp/workspace/sidecar-container/sidecar.log
         {command_sidecar_failure}
     """
     # Strip leading whitespace to avoid syntax errors due to heredoc indentation
