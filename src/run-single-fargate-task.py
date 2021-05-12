@@ -64,15 +64,7 @@ def lambda_handler(event, context):
     region = os.environ["AWS_REGION"]
     padded_event = set_defaults(event)
     verify_inputs(padded_event)
-    task_family_prefix = (
-        "_".join(
-            filter(
-                None,
-                [padded_event["state_machine_id"], padded_event["state"]],
-            )
-        )
-        or "one-off-task"
-    )
+    log_stream_prefix = padded_event["log_stream_prefix"]
     mountpoints = padded_event["mountpoints"] or (
         {"content": padded_event["content"]} if padded_event["content"] else {}
     )
@@ -82,10 +74,9 @@ def lambda_handler(event, context):
         else ENTRYPOINT_FOLDER
     )
 
-    task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
     task_definition = create_task_definition(
         region,
-        task_family_prefix,
+        log_stream_prefix,
         padded_event["image"],
         padded_event["cmd_to_run"],
         padded_event["task_role_arn"],
@@ -124,14 +115,16 @@ def set_defaults(event):
         "task_cpu": "256",
         "state_machine_id": "",
         "token": "",
+        "log_stream_prefix": "task",
         "credentials_secret_arn": "",
     }
+
     return {**defaults, **event}
 
 
 def create_task_definition(
     region,
-    task_family_prefix,
+    log_stream_prefix,
     image_url,
     cmd_to_run,
     task_role_arn,
@@ -146,12 +139,13 @@ def create_task_definition(
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
     task_family = (
-        f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
+        f"{log_stream_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
     )
+    task_family = re.sub("[^A-Za-z0-9_-]", "_", task_family)
     error_log_command = get_error_log_command(
         f"{MAIN_CONTAINER_FOLDER}/error_header.log",
         main_log_group_name,
-        task_family,
+        log_stream_prefix,
         region,
     )
     shellscript = f"""
@@ -204,7 +198,7 @@ def create_task_definition(
                     "options": {
                         "awslogs-group": main_log_group_name,
                         "awslogs-region": region,
-                        "awslogs-stream-prefix": task_family,
+                        "awslogs-stream-prefix": log_stream_prefix,
                     },
                 },
                 "mountPoints": [
@@ -239,7 +233,7 @@ def create_task_definition(
                     "options": {
                         "awslogs-group": sidecar_log_group_name,
                         "awslogs-region": region,
-                        "awslogs-stream-prefix": task_family,
+                        "awslogs-stream-prefix": log_stream_prefix,
                     },
                 },
                 **(
