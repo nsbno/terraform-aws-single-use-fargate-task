@@ -11,6 +11,12 @@ variable "lambda_timeout" {
   default     = 10
 }
 
+variable "kms_key_arn" {
+  description = "Optional ARN of a KMS key to use for encrypting the CloudWatch logs."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "A map of tags (key-value pairs) passed to resources."
   type        = map(string)

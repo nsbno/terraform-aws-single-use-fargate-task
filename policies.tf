@@ -64,10 +64,3 @@ data "aws_iam_policy_document" "ecs_assume" {
     }
   }
 }
-data "aws_iam_policy_document" "create_log_groups_for_ecs" {
-  statement {
-    effect    = "Allow"
-    actions   = ["logs:CreateLogGroup"]
-    resources = ["*"]
-  }
-}

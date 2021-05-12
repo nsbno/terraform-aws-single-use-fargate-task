@@ -15,6 +15,9 @@ MAIN_CONTAINER_FOLDER = f"{WORKSPACE}/main-container"
 SIDECAR_CONTAINER_FOLDER = f"{WORKSPACE}/sidecar-container"
 ENTRYPOINT_FOLDER = f"{WORKSPACE}/entrypoint"
 
+SIDECAR_LOG_GROUP_NAME = os.environ["SIDECAR_LOG_GROUP_NAME"]
+MAIN_LOG_GROUP_NAME = os.environ["MAIN_LOG_GROUP_NAME"]
+
 
 def verify_inputs(event):
     required_keys = [
@@ -80,9 +83,7 @@ def lambda_handler(event, context):
     )
 
     task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
-    task_name = "single-use-tasks"
     task_definition = create_task_definition(
-        task_name,
         region,
         task_family_prefix,
         padded_event["image"],
@@ -96,7 +97,6 @@ def lambda_handler(event, context):
     )
     logger.info(task_definition)
     run_task(
-        task_name,
         task_definition,
         region,
         mountpoints,
@@ -130,7 +130,6 @@ def set_defaults(event):
 
 
 def create_task_definition(
-    task_name,
     region,
     task_family_prefix,
     image_url,
@@ -141,6 +140,8 @@ def create_task_definition(
     task_cpu,
     task_memory,
     credentials_secret_arn,
+    main_log_group_name=MAIN_LOG_GROUP_NAME,
+    sidecar_log_group_name=SIDECAR_LOG_GROUP_NAME,
 ):
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
@@ -149,8 +150,8 @@ def create_task_definition(
     )
     error_log_command = get_error_log_command(
         f"{MAIN_CONTAINER_FOLDER}/error_header.log",
-        task_name,
-        task_family + "-main",
+        main_log_group_name,
+        task_family,
         region,
     )
     shellscript = f"""
@@ -193,7 +194,7 @@ def create_task_definition(
         requiresCompatibilities=["FARGATE"],
         containerDefinitions=[
             {
-                "name": task_name,
+                "name": "main",
                 "image": image_url,
                 "entryPoint": ["/bin/sh", "-c"],
                 "command": [command_str],
@@ -201,10 +202,9 @@ def create_task_definition(
                 "logConfiguration": {
                     "logDriver": "awslogs",
                     "options": {
-                        "awslogs-create-group": "true",
-                        "awslogs-group": "/aws/ecs/" + task_name,
+                        "awslogs-group": main_log_group_name,
                         "awslogs-region": region,
-                        "awslogs-stream-prefix": task_family + "-main",
+                        "awslogs-stream-prefix": task_family,
                     },
                 },
                 "mountPoints": [
@@ -224,7 +224,7 @@ def create_task_definition(
                 ),
             },
             {
-                "name": task_name + "-activity-sidecar",
+                "name": "sidecar",
                 "image": "vydev/awscli:latest",
                 "entryPoint": ["/bin/sh", "-c"],
                 "mountPoints": [
@@ -237,10 +237,9 @@ def create_task_definition(
                 "logConfiguration": {
                     "logDriver": "awslogs",
                     "options": {
-                        "awslogs-create-group": "true",
-                        "awslogs-group": "/aws/ecs/" + task_name,
+                        "awslogs-group": sidecar_log_group_name,
                         "awslogs-region": region,
-                        "awslogs-stream-prefix": task_family + "-sidecar",
+                        "awslogs-stream-prefix": task_family,
                     },
                 },
                 **(
@@ -259,7 +258,6 @@ def create_task_definition(
 
 
 def run_task(
-    task_name,
     task_definition,
     region,
     mountpoints,
@@ -268,13 +266,14 @@ def run_task(
     ecs_cluster,
     assign_public_ip,
     security_groups,
+    sidecar_log_group_name=SIDECAR_LOG_GROUP_NAME,
 ):
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
-    command_str = prepare_cmd(
+    command_str = prepare_sidecar_cmd(
         mountpoints,
         token,
-        task_name,
+        sidecar_log_group_name,
         task_definition["family"],
         region,
     )
@@ -288,7 +287,7 @@ def run_task(
         overrides={
             "containerOverrides": [
                 {
-                    "name": f"{task_name}-activity-sidecar",
+                    "name": "sidecar",
                     "command": [command_str],
                 }
             ]
@@ -309,14 +308,14 @@ def run_task(
     )
 
 
-def get_error_log_command(filename, task_name, stream_prefix, region):
+def get_error_log_command(filename, log_group_name, log_stream_prefix, region):
     """Return a shell command for generating a file containing the header of an error log"""
     error_log_command = f"""
         cat <<EOF > {filename}
         ---------------
         THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:
 
-        https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={stream_prefix};streamFilter=typeLogStreamPrefix
+        https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group={log_group_name};prefix={log_stream_prefix};streamFilter=typeLogStreamPrefix
         ---------------
 
         EOF
@@ -324,11 +323,13 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
     return error_log_command
 
 
-def prepare_cmd(mountpoints, token, task_name, task_family, region):
+def prepare_sidecar_cmd(
+    mountpoints, token, log_group_name, log_stream_prefix, region
+):
     error_log_command = get_error_log_command(
         f"{SIDECAR_CONTAINER_FOLDER}/error_header.log",
-        task_name,
-        task_family + "-sidecar",
+        log_group_name,
+        log_stream_prefix,
         region,
     )
     command_head = f"""
