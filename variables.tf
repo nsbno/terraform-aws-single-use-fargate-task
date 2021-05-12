@@ -11,7 +11,7 @@ variable "lambda_timeout" {
   default     = 10
 }
 
-variable "kms_key_arn" {
+variable "container_log_kms_key_arn" {
   description = "Optional ARN of a KMS key to use for encrypting the CloudWatch logs associated with a Fargate task."
   type        = string
   default     = null

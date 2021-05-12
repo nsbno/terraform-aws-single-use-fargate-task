@@ -71,14 +71,14 @@ resource "aws_cloudwatch_log_group" "lambda" {
 
 resource "aws_cloudwatch_log_group" "sidecar" {
   name              = "/aws/ecs/${var.name_prefix}-single-use-tasks/sidecar"
-  kms_key_id        = var.kms_key_arn
+  kms_key_id        = var.container_log_kms_key_arn
   retention_in_days = var.container_log_retention_in_days
   tags              = var.tags
 }
 
 resource "aws_cloudwatch_log_group" "main" {
   name              = "/aws/ecs/${var.name_prefix}-single-use-tasks/main"
-  kms_key_id        = var.kms_key_arn
+  kms_key_id        = var.container_log_kms_key_arn
   retention_in_days = var.container_log_retention_in_days
   tags              = var.tags
 }
