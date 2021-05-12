@@ -11,6 +11,11 @@ variable "lambda_timeout" {
   default     = 10
 }
 
+variable "container_log_tag_overrides" {
+  description = "A map of additional tags (key-value pairs) to add to the CloudWatch log groups associated with a Fargate task."
+  default     = {}
+}
+
 variable "container_log_kms_key_arn" {
   description = "Optional ARN of a KMS key to use for encrypting the CloudWatch logs associated with a Fargate task."
   type        = string
