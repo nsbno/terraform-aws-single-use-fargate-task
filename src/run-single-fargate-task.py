@@ -110,10 +110,8 @@ def set_defaults(event):
         "image": "",
         "task_role_arn": "",
         "mountpoints": {},
-        "state": "",
         "task_memory": "512",
         "task_cpu": "256",
-        "state_machine_id": "",
         "token": "",
         "log_stream_prefix": "task",
         "credentials_secret_arn": "",
@@ -262,6 +260,7 @@ def run_task(
     security_groups,
     sidecar_log_group_name=SIDECAR_LOG_GROUP_NAME,
 ):
+    """Start the Fargate task and return the ARN of the task"""
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
     command_str = prepare_sidecar_cmd(
