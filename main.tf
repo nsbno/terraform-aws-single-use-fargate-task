@@ -63,6 +63,12 @@ resource "aws_iam_role_policy_attachment" "ECSTaskExecution" {
   role       = aws_iam_role.task_execution_role.id
 }
 
+resource "aws_cloudwatch_log_group" "lambda" {
+  name              = "/aws/lambda/${aws_lambda_function.run_single_fargate_task.function_name}"
+  retention_in_days = var.lambda_log_retention_in_days
+  tags              = var.tags
+}
+
 resource "aws_cloudwatch_log_group" "sidecar" {
   name              = "/aws/ecs/${var.name_prefix}-single-use-tasks/sidecar"
   kms_key_id        = var.kms_key_arn

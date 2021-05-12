@@ -22,6 +22,11 @@ variable "container_log_retention_in_days" {
   default     = 30
 }
 
+variable "lambda_log_retention_in_days" {
+  description = "The number of days to retain CloudWatch logs from the Lambda."
+  default     = 14
+}
+
 variable "tags" {
   description = "A map of tags (key-value pairs) passed to resources."
   type        = map(string)
