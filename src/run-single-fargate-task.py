@@ -96,6 +96,7 @@ def lambda_handler(event, context):
         padded_event["ecs_cluster"],
         padded_event["assign_public_ip"],
         padded_event["security_groups"],
+        padded_event["send_error_logs_to_stepfunctions"]
     )
     clean_up(task_definition)
 
@@ -115,6 +116,7 @@ def set_defaults(event):
         "token": "",
         "log_stream_prefix": "task",
         "credentials_secret_arn": "",
+        "send_error_logs_to_stepfunctions": True,
     }
 
     return {**defaults, **event}
@@ -258,6 +260,7 @@ def run_task(
     ecs_cluster,
     assign_public_ip,
     security_groups,
+    send_error_logs_to_stepfunctions,
     sidecar_log_group_name=SIDECAR_LOG_GROUP_NAME,
 ):
     """Start the Fargate task and return the ARN of the task"""
@@ -269,6 +272,7 @@ def run_task(
         sidecar_log_group_name,
         task_definition["family"],
         region,
+        send_error_logs_to_stepfunctions=send_error_logs_to_stepfunctions,
     )
     logger.info("sidecar command str: " + json.dumps(command_str))
     response = client.run_task(
@@ -306,7 +310,7 @@ def get_error_log_command(filename, log_group_name, log_stream_prefix, region):
     error_log_command = f"""
         cat <<EOF > {filename}
         ---------------
-        THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:
+        FULL LOG AVAILABLE AT:
 
         https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group={log_group_name};prefix={log_stream_prefix};streamFilter=typeLogStreamPrefix
         ---------------
@@ -317,8 +321,14 @@ def get_error_log_command(filename, log_group_name, log_stream_prefix, region):
 
 
 def prepare_sidecar_cmd(
-    mountpoints, token, log_group_name, log_stream_prefix, region
+    mountpoints,
+    token,
+    log_group_name,
+    log_stream_prefix,
+    region,
+    send_error_logs_to_stepfunctions=True,
 ):
+    """Return the shell script command to run inside the sidecar container"""
     error_log_command = get_error_log_command(
         f"{SIDECAR_CONTAINER_FOLDER}/error_header.log",
         log_group_name,
@@ -352,16 +362,16 @@ def prepare_sidecar_cmd(
         command_activity_stop = f"""
             result="$(cat {MAIN_CONTAINER_FOLDER}/complete)"
             if [ "$result" -eq 0 ]; then
-                aws stepfunctions send-task-success --task-token "{token}" --task-output '{{"output": "$result"}}' --region "{region}"
+                aws stepfunctions send-task-success --task-token "{token}" --task-output '{{"output": ""}}' --region "{region}"
             else
-                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {MAIN_CONTAINER_FOLDER}/error_header.log; cat {MAIN_CONTAINER_FOLDER}/main.log | tail -c 32000 | tail -15)"
+                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {MAIN_CONTAINER_FOLDER}/error_header.log{'; cat ' + MAIN_CONTAINER_FOLDER + '/main.log' if send_error_logs_to_stepfunctions else ""} | tail -c 32000 | tail -15)"
             fi
         """
         command_sidecar_failure = f"""
             if [ ! "$(cat {SIDECAR_CONTAINER_FOLDER}/exitcode)" -eq 0 ]; then
                 retries=0
                 while [ "$retries" -lt 5 ]; do
-                    aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {SIDECAR_CONTAINER_FOLDER}/error_header.log; cat {SIDECAR_CONTAINER_FOLDER}/sidecar.log | tail -c 32000 | tail -15)" && break
+                    aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {SIDECAR_CONTAINER_FOLDER}/error_header.log{'; cat ' + SIDECAR_CONTAINER_FOLDER + '/sidecar.log' if send_error_logs_to_stepfunctions else ""} | tail -c 32000 | tail -15)" && break
                     retries="$((retries+1))"
                     echo "Failed to report sidecar failure"
                 done
