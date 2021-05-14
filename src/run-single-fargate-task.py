@@ -202,7 +202,9 @@ def create_task_definition(
                     "options": {
                         "awslogs-group": main_log_group_name,
                         "awslogs-region": region,
-                        "awslogs-stream-prefix": log_stream_prefix,
+                        "awslogs-stream-prefix": log_stream_prefix
+                        if log_stream_prefix != "task"
+                        else task_family,
                     },
                 },
                 "mountPoints": [
@@ -237,7 +239,9 @@ def create_task_definition(
                     "options": {
                         "awslogs-group": sidecar_log_group_name,
                         "awslogs-region": region,
-                        "awslogs-stream-prefix": log_stream_prefix,
+                        "awslogs-stream-prefix": log_stream_prefix
+                        if log_stream_prefix != "task"
+                        else task_family,
                     },
                 },
                 **(
