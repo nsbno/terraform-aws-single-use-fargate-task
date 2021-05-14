@@ -23,3 +23,10 @@ output "ecs_cluster_arn" {
   value       = aws_ecs_cluster.ecs_cluster.arn
 }
 
+output "log_group_names" {
+  description = "The names of CloudWatch log groups used by the containers in a single-use Fargate task."
+  value = [
+    aws_cloudwatch_log_group.main.name,
+    aws_cloudwatch_log_group.sidecar.name
+  ]
+}

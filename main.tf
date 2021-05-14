@@ -23,7 +23,13 @@ resource "aws_lambda_function" "run_single_fargate_task" {
   filename         = data.archive_file.lambda_src.output_path
   source_code_hash = filebase64sha256(data.archive_file.lambda_src.output_path)
   timeout          = var.lambda_timeout
-  tags             = var.tags
+  environment {
+    variables = {
+      SIDECAR_LOG_GROUP_NAME = aws_cloudwatch_log_group.sidecar.name
+      MAIN_LOG_GROUP_NAME    = aws_cloudwatch_log_group.main.name
+    }
+  }
+  tags = var.tags
 }
 
 resource "aws_iam_role" "lambda_exec" {
@@ -57,8 +63,22 @@ resource "aws_iam_role_policy_attachment" "ECSTaskExecution" {
   role       = aws_iam_role.task_execution_role.id
 }
 
-resource "aws_iam_role_policy" "create_log_group_to_ecs" {
-  policy = data.aws_iam_policy_document.create_log_groups_for_ecs.json
-  role   = aws_iam_role.task_execution_role.id
+resource "aws_cloudwatch_log_group" "lambda" {
+  name              = "/aws/lambda/${aws_lambda_function.run_single_fargate_task.function_name}"
+  retention_in_days = var.lambda_log_retention_in_days
+  tags              = var.tags
 }
 
+resource "aws_cloudwatch_log_group" "sidecar" {
+  name              = "/aws/ecs/${var.name_prefix}-single-use-tasks/sidecar"
+  kms_key_id        = var.container_log_kms_key_arn
+  retention_in_days = var.container_log_retention_in_days
+  tags              = merge(var.tags, var.container_log_tag_overrides)
+}
+
+resource "aws_cloudwatch_log_group" "main" {
+  name              = "/aws/ecs/${var.name_prefix}-single-use-tasks/main"
+  kms_key_id        = var.container_log_kms_key_arn
+  retention_in_days = var.container_log_retention_in_days
+  tags              = merge(var.tags, var.container_log_tag_overrides)
+}

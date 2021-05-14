@@ -1,10 +1,14 @@
 import json
-import boto3
-import re
-import os
-import subprocess
-from datetime import datetime
 import logging
+import os
+import re
+import subprocess
+import urllib.parse
+
+import boto3
+
+from datetime import datetime
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -14,6 +18,9 @@ WORKSPACE = "/tmp/workspace"
 MAIN_CONTAINER_FOLDER = f"{WORKSPACE}/main-container"
 SIDECAR_CONTAINER_FOLDER = f"{WORKSPACE}/sidecar-container"
 ENTRYPOINT_FOLDER = f"{WORKSPACE}/entrypoint"
+
+SIDECAR_LOG_GROUP_NAME = os.environ["SIDECAR_LOG_GROUP_NAME"]
+MAIN_LOG_GROUP_NAME = os.environ["MAIN_LOG_GROUP_NAME"]
 
 
 def verify_inputs(event):
@@ -61,15 +68,7 @@ def lambda_handler(event, context):
     region = os.environ["AWS_REGION"]
     padded_event = set_defaults(event)
     verify_inputs(padded_event)
-    task_family_prefix = (
-        "_".join(
-            filter(
-                None,
-                [padded_event["state_machine_id"], padded_event["state"]],
-            )
-        )
-        or "one-off-task"
-    )
+    log_stream_prefix = padded_event["log_stream_prefix"]
     mountpoints = padded_event["mountpoints"] or (
         {"content": padded_event["content"]} if padded_event["content"] else {}
     )
@@ -79,12 +78,9 @@ def lambda_handler(event, context):
         else ENTRYPOINT_FOLDER
     )
 
-    task_family_prefix = re.sub("[^A-Za-z0-9_-]", "_", task_family_prefix)
-    task_name = "single-use-tasks"
     task_definition = create_task_definition(
-        task_name,
         region,
-        task_family_prefix,
+        log_stream_prefix,
         padded_event["image"],
         padded_event["cmd_to_run"],
         padded_event["task_role_arn"],
@@ -96,7 +92,6 @@ def lambda_handler(event, context):
     )
     logger.info(task_definition)
     run_task(
-        task_name,
         task_definition,
         region,
         mountpoints,
@@ -105,6 +100,7 @@ def lambda_handler(event, context):
         padded_event["ecs_cluster"],
         padded_event["assign_public_ip"],
         padded_event["security_groups"],
+        padded_event["send_error_logs_to_stepfunctions"],
     )
     clean_up(task_definition)
 
@@ -119,20 +115,20 @@ def set_defaults(event):
         "image": "",
         "task_role_arn": "",
         "mountpoints": {},
-        "state": "",
         "task_memory": "512",
         "task_cpu": "256",
-        "state_machine_id": "",
         "token": "",
+        "log_stream_prefix": "task",
         "credentials_secret_arn": "",
+        "send_error_logs_to_stepfunctions": True,
     }
+
     return {**defaults, **event}
 
 
 def create_task_definition(
-    task_name,
     region,
-    task_family_prefix,
+    log_stream_prefix,
     image_url,
     cmd_to_run,
     task_role_arn,
@@ -141,16 +137,19 @@ def create_task_definition(
     task_cpu,
     task_memory,
     credentials_secret_arn,
+    main_log_group_name=MAIN_LOG_GROUP_NAME,
+    sidecar_log_group_name=SIDECAR_LOG_GROUP_NAME,
 ):
     date_time_obj = datetime.now()
     client = boto3.client("ecs")
     task_family = (
-        f"{task_family_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
+        f"{log_stream_prefix}-{date_time_obj.strftime('%Y%m%d%H%M%S%f')[:-3]}"
     )
+    task_family = re.sub("[^A-Za-z0-9_-]", "_", task_family)
     error_log_command = get_error_log_command(
         f"{MAIN_CONTAINER_FOLDER}/error_header.log",
-        task_name,
-        task_family + "-main",
+        main_log_group_name,
+        log_stream_prefix,
         region,
     )
     shellscript = f"""
@@ -193,7 +192,7 @@ def create_task_definition(
         requiresCompatibilities=["FARGATE"],
         containerDefinitions=[
             {
-                "name": task_name,
+                "name": "main",
                 "image": image_url,
                 "entryPoint": ["/bin/sh", "-c"],
                 "command": [command_str],
@@ -201,10 +200,11 @@ def create_task_definition(
                 "logConfiguration": {
                     "logDriver": "awslogs",
                     "options": {
-                        "awslogs-create-group": "true",
-                        "awslogs-group": "/aws/ecs/" + task_name,
+                        "awslogs-group": main_log_group_name,
                         "awslogs-region": region,
-                        "awslogs-stream-prefix": task_family + "-main",
+                        "awslogs-stream-prefix": log_stream_prefix
+                        if log_stream_prefix != "task"
+                        else task_family,
                     },
                 },
                 "mountPoints": [
@@ -224,7 +224,7 @@ def create_task_definition(
                 ),
             },
             {
-                "name": task_name + "-activity-sidecar",
+                "name": "sidecar",
                 "image": "vydev/awscli:latest",
                 "entryPoint": ["/bin/sh", "-c"],
                 "mountPoints": [
@@ -237,10 +237,11 @@ def create_task_definition(
                 "logConfiguration": {
                     "logDriver": "awslogs",
                     "options": {
-                        "awslogs-create-group": "true",
-                        "awslogs-group": "/aws/ecs/" + task_name,
+                        "awslogs-group": sidecar_log_group_name,
                         "awslogs-region": region,
-                        "awslogs-stream-prefix": task_family + "-sidecar",
+                        "awslogs-stream-prefix": log_stream_prefix
+                        if log_stream_prefix != "task"
+                        else task_family,
                     },
                 },
                 **(
@@ -259,7 +260,6 @@ def create_task_definition(
 
 
 def run_task(
-    task_name,
     task_definition,
     region,
     mountpoints,
@@ -268,15 +268,19 @@ def run_task(
     ecs_cluster,
     assign_public_ip,
     security_groups,
+    send_error_logs_to_stepfunctions,
+    sidecar_log_group_name=SIDECAR_LOG_GROUP_NAME,
 ):
+    """Start the Fargate task and return the ARN of the task"""
     logger.info("subnets: " + str(subnets))
     client = boto3.client("ecs")
-    command_str = prepare_cmd(
+    command_str = prepare_sidecar_cmd(
         mountpoints,
         token,
-        task_name,
+        sidecar_log_group_name,
         task_definition["family"],
         region,
+        send_error_logs_to_stepfunctions=send_error_logs_to_stepfunctions,
     )
     logger.info("sidecar command str: " + json.dumps(command_str))
     response = client.run_task(
@@ -288,7 +292,7 @@ def run_task(
         overrides={
             "containerOverrides": [
                 {
-                    "name": f"{task_name}-activity-sidecar",
+                    "name": "sidecar",
                     "command": [command_str],
                 }
             ]
@@ -309,14 +313,17 @@ def run_task(
     )
 
 
-def get_error_log_command(filename, task_name, stream_prefix, region):
+def get_error_log_command(filename, log_group_name, log_stream_prefix, region):
     """Return a shell command for generating a file containing the header of an error log"""
+    url_encoded_log_group_name = urllib.parse.quote(log_group_name)
+    url_encoded_log_stream_prefix = urllib.parse.quote(log_stream_prefix)
+    url = f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group={url_encoded_log_group_name};prefix={url_encoded_log_stream_prefix};streamFilter=typeLogStreamPrefix"
     error_log_command = f"""
         cat <<EOF > {filename}
         ---------------
-        THE FOLLOWING IS JUST AN EXCERPT - FULL LOG AVAILABLE AT:
+        FULL CLOUDWATCH LOG STREAM AVAILABLE AT:
 
-        https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group=/aws/ecs/{task_name};prefix={stream_prefix};streamFilter=typeLogStreamPrefix
+        {url}
         ---------------
 
         EOF
@@ -324,11 +331,19 @@ def get_error_log_command(filename, task_name, stream_prefix, region):
     return error_log_command
 
 
-def prepare_cmd(mountpoints, token, task_name, task_family, region):
+def prepare_sidecar_cmd(
+    mountpoints,
+    token,
+    log_group_name,
+    log_stream_prefix,
+    region,
+    send_error_logs_to_stepfunctions=True,
+):
+    """Return the shell script command to run inside the sidecar container"""
     error_log_command = get_error_log_command(
         f"{SIDECAR_CONTAINER_FOLDER}/error_header.log",
-        task_name,
-        task_family + "-sidecar",
+        log_group_name,
+        log_stream_prefix,
         region,
     )
     command_head = f"""
@@ -358,16 +373,16 @@ def prepare_cmd(mountpoints, token, task_name, task_family, region):
         command_activity_stop = f"""
             result="$(cat {MAIN_CONTAINER_FOLDER}/complete)"
             if [ "$result" -eq 0 ]; then
-                aws stepfunctions send-task-success --task-token "{token}" --task-output '{{"output": "$result"}}' --region "{region}"
+                aws stepfunctions send-task-success --task-token "{token}" --task-output '{{"output": ""}}' --region "{region}"
             else
-                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {MAIN_CONTAINER_FOLDER}/error_header.log; cat {MAIN_CONTAINER_FOLDER}/main.log | tail -c 32000 | tail -15)"
+                aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {MAIN_CONTAINER_FOLDER}/error_header.log{'; cat ' + MAIN_CONTAINER_FOLDER + '/main.log' if send_error_logs_to_stepfunctions else ""} | tail -c 32000 | tail -15)"
             fi
         """
         command_sidecar_failure = f"""
             if [ ! "$(cat {SIDECAR_CONTAINER_FOLDER}/exitcode)" -eq 0 ]; then
                 retries=0
                 while [ "$retries" -lt 5 ]; do
-                    aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {SIDECAR_CONTAINER_FOLDER}/error_header.log; cat {SIDECAR_CONTAINER_FOLDER}/sidecar.log | tail -c 32000 | tail -15)" && break
+                    aws stepfunctions send-task-failure --task-token "{token}" --error "NonZeroExitCode" --cause "$(cat {SIDECAR_CONTAINER_FOLDER}/error_header.log{'; cat ' + SIDECAR_CONTAINER_FOLDER + '/sidecar.log' if send_error_logs_to_stepfunctions else ""} | tail -c 32000 | tail -15)" && break
                     retries="$((retries+1))"
                     echo "Failed to report sidecar failure"
                 done
