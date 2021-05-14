@@ -1,10 +1,14 @@
 import json
-import boto3
-import re
-import os
-import subprocess
-from datetime import datetime
 import logging
+import os
+import re
+import subprocess
+import urllib.parse
+
+import boto3
+
+from datetime import datetime
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -96,7 +100,7 @@ def lambda_handler(event, context):
         padded_event["ecs_cluster"],
         padded_event["assign_public_ip"],
         padded_event["security_groups"],
-        padded_event["send_error_logs_to_stepfunctions"]
+        padded_event["send_error_logs_to_stepfunctions"],
     )
     clean_up(task_definition)
 
@@ -307,12 +311,15 @@ def run_task(
 
 def get_error_log_command(filename, log_group_name, log_stream_prefix, region):
     """Return a shell command for generating a file containing the header of an error log"""
+    url_encoded_log_group_name = urllib.parse.quote(log_group_name)
+    url_encoded_log_stream_prefix = urllib.parse.quote(log_stream_prefix)
+    url = f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group={url_encoded_log_group_name};prefix={url_encoded_log_stream_prefix};streamFilter=typeLogStreamPrefix"
     error_log_command = f"""
         cat <<EOF > {filename}
         ---------------
-        FULL LOG AVAILABLE AT:
+        FULL CLOUDWATCH LOG STREAM AVAILABLE AT:
 
-        https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logStream:group={log_group_name};prefix={log_stream_prefix};streamFilter=typeLogStreamPrefix
+        {url}
         ---------------
 
         EOF
