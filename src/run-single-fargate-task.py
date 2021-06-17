@@ -101,6 +101,8 @@ def lambda_handler(event, context):
         padded_event["assign_public_ip"],
         padded_event["security_groups"],
         padded_event["send_error_logs_to_stepfunctions"],
+        padded_event["metric_namespace"],
+        padded_event["metric_dimensions"],
     )
     clean_up(task_definition)
 
@@ -120,6 +122,8 @@ def set_defaults(event):
         "token": "",
         "log_stream_prefix": "task",
         "credentials_secret_arn": "",
+        "metric_namespace": "",
+        "metric_dimensions": {},
         "send_error_logs_to_stepfunctions": True,
     }
 
@@ -269,6 +273,8 @@ def run_task(
     assign_public_ip,
     security_groups,
     send_error_logs_to_stepfunctions,
+    metric_namespace,
+    metric_dimensions,
     sidecar_log_group_name=SIDECAR_LOG_GROUP_NAME,
 ):
     """Start the Fargate task and return the ARN of the task"""
@@ -280,6 +286,8 @@ def run_task(
         sidecar_log_group_name,
         task_definition["family"],
         region,
+        metric_namespace,
+        metric_dimensions,
         send_error_logs_to_stepfunctions=send_error_logs_to_stepfunctions,
     )
     logger.info("sidecar command str: " + json.dumps(command_str))
@@ -337,6 +345,8 @@ def prepare_sidecar_cmd(
     log_group_name,
     log_stream_prefix,
     region,
+    metric_namespace,
+    metric_dimensions,
     send_error_logs_to_stepfunctions=True,
 ):
     """Return the shell script command to run inside the sidecar container"""
@@ -366,9 +376,8 @@ def prepare_sidecar_cmd(
             unzip {SIDECAR_CONTAINER_FOLDER}/{zip_file} -d {destination}
         """
     command_sidecar_failure = ""
-    if token == "":
-        command_activity_stop = ""
-    else:
+    command_activity_stop = ""
+    if token:
         # The `--cause` parameter for `send-task-failure` has a limit of 32768 characters
         command_activity_stop = f"""
             result="$(cat {MAIN_CONTAINER_FOLDER}/complete)"
@@ -387,6 +396,26 @@ def prepare_sidecar_cmd(
                     echo "Failed to report sidecar failure"
                 done
             fi
+        """
+    if metric_namespace and metric_dimensions:
+        stringified_dimensions = ",".join(
+            [key + "=" + val for key, val in metric_dimensions.items()]
+        )
+        command_activity_stop += f"""
+        result="$(cat {MAIN_CONTAINER_FOLDER}/complete)"
+        if [ "$result" -eq 0 ]; then
+            metric_name="TaskSuccess"
+        else
+            metric_name="TaskFailure"
+        fi
+        echo "Publishing custom metric to CloudWatch"
+        aws cloudwatch put-metric-data \\
+            --metric-name "$metric_name" \\
+            --namespace "{metric_namespace}" \\
+            --dimensions "{stringified_dimensions}" \\
+            --storage-resolution 1 \\
+            --value 1 \\
+            --unit Count
         """
 
     command_init_complete = f"touch {SIDECAR_CONTAINER_FOLDER}/init-complete"
