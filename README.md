@@ -45,6 +45,16 @@ Each ZIP file is unzipped to `/tmp/workspace/entrypoint/<mount-name>`.
 
 _(Note: The attribute `mountpoints` and `content` are mutually exclusive. Only 0 or exactly one of them can be used)._
 
+#### metric_namespace (Optional)
+An optional CloudWatch metric namespace to use for publishing CloudWatch custom metrics signaling success or failure of a given Fargate task. Both `metric_namespace` and `metric_dimensions` must be set for metrics to be published.
+
+_(Note: The task role used must have a policy attached allowing it to publish metrics to CloudWatch, i.e., `cloudwatch:PutMetricData`)_
+
+#### metric_dimensions (Optional)
+A map of dimensions to use for the CloudWatch custom metrics published. Both `metric_namespace` and `metric_dimensions` must be set for metrics to be published. (If used in an AWS Step Function state machine, an example value `"metric_dimensions": { "StateMachineName.$": "$$.StateMachine.Name", "StateName.$": "$$.State.Name" }`).
+
+_(Note: The task role used must have a policy attached allowing it to publish metrics to CloudWatch, i.e., `cloudwatch:PutMetricData`)_
+
 #### task_cpu (Optional)
 The task CPU (CPU units or vCPUs) for the Fargate task, defaults to `"256"`. (_Supported values can be found here: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html._)
 
@@ -63,7 +73,7 @@ A list of IDs of security groups associated with the Fargate task. If not specif
 #### task_role_arn (Optional\*)
 The arn of the role the task will assume when running.
 
-_\*Required if the Lambda is used in a Step Functions state machine with the `token` attribute passed in as Lambda input._
+_\*Required if `metric_namespace` and `metric_dimensions` are set, or if the Lambda is used in a Step Functions state machine with the `token` attribute passed in as Lambda input._
 
 #### task_execution_role_arn
 The arn of the role given to Fargate to run tasks - this is typically a role with the managed `AmazonECSTaskExecutionRolePolicy` policy attached.
