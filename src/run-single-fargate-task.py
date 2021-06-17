@@ -398,9 +398,14 @@ def prepare_sidecar_cmd(
                 done
             fi
         """
-    if metric_namespace and metric_dimensions:
+    if metric_namespace:
         stringified_dimensions = ",".join(
             [key + "=" + val for key, val in metric_dimensions.items()]
+        )
+        dimensions_arg = (
+            f'--dimensions "{stringified_dimensions}"'
+            if stringified_dimensions
+            else ""
         )
         command_activity_stop += f"""
         result="$(cat {MAIN_CONTAINER_FOLDER}/complete)"
@@ -413,7 +418,7 @@ def prepare_sidecar_cmd(
         aws cloudwatch put-metric-data \\
             --metric-name "$metric_name" \\
             --namespace "{metric_namespace}" \\
-            --dimensions "{stringified_dimensions}" \\
+            {dimensions_arg} \\
             --storage-resolution 1 \\
             --value 1 \\
             --unit Count
