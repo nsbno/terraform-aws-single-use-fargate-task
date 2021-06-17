@@ -176,8 +176,9 @@ def create_task_definition(
         cd {entrypoint}
         ( set +u; {cmd_to_run or 'true'} )
         )
-        echo $? > {MAIN_CONTAINER_FOLDER}/complete
+        echo "$?" > {MAIN_CONTAINER_FOLDER}/complete
         }} 2>&1 | tee {MAIN_CONTAINER_FOLDER}/main.log
+        exit "$(cat {MAIN_CONTAINER_FOLDER}/complete)"
     """
     # Strip leading whitespace to avoid syntax errors due to heredoc indentation
     shellscript = "\n".join(
